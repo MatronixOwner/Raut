@@ -1,4 +1,4 @@
-RAUT 1.0.1 — КРАТКАЯ ИНСТРУКЦИЯ
+RAUT 1.0.2 — КРАТКАЯ ИНСТРУКЦИЯ
 ================================
 
 ЧТО ЭТО
@@ -60,12 +60,12 @@ RAUT 1.0.1 — КРАТКАЯ ИНСТРУКЦИЯ
   настоящий Node.js (nodew.exe) — эвристики некоторых антивирусов считают это «пакером».
   Что делать:
     1. Сверьте SHA-256 установщика с файлом .sha256 (PowerShell):
-         Get-FileHash .\RautSetup-1.0.1.exe -Algorithm SHA256
+         Get-FileHash .\RautSetup-1.0.2.exe -Algorithm SHA256
        и SHA-256 bin\nodew.exe с BUILDINFO.txt.
     2. Проверьте файл на https://www.virustotal.com/gui/home/upload
     3. Если Defender заблокировал: «Безопасность Windows → Защита от вирусов
        и угроз → Журнал защиты → Разрешить на устройстве».
-    4. Альтернатива без инсталлятора: Raut-1.0.1-portable.zip — распакуйте
+    4. Альтернатива без инсталлятора: Raut-1.0.2-portable.zip — распакуйте
        и запустите Run-Raut.cmd.
     5. Полная проверка: соберите установщик из исходников сами —
        `bash scripts/build-installer.sh` (см. README.md).

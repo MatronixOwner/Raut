@@ -1,0 +1,16 @@
+{
+  "name": "Raut — друзья, чат, голос и экран",
+  "short_name": "Raut",
+  "description": "Общайтесь, созванивайтесь и играйте вместе",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#1e1f22",
+  "theme_color": "#1e1f22",
+  "lang": "ru",
+  "icons": [
+    { "src": "/assets/logo.png?v=2", "sizes": "256x256", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/logo.png?v=2", "sizes": "256x256", "type": "image/png", "purpose": "maskable" }
+  ]
+}

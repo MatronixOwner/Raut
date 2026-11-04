@@ -16,7 +16,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CACHE="$ROOT/.cache"
 PAYLOAD="$CACHE/payload"
 RELEASE="${RAUT_RELEASE_DIR:-$ROOT/release}"
-VERSION="1.0.1"
+VERSION="1.0.2"
 NODE_VERSION="22.23.4"
 # Адрес общего сервера Raut. Если задан, установщик открывает его сразу,
 # и пользователю не нужно поднимать свой сервер.
@@ -118,8 +118,9 @@ cp "$ROOT/LICENSE" "$PAYLOAD/LICENSE.txt"
 python3 - "$PAYLOAD/client/config.js" "$RAUT_PUBLIC_URL" <<'PY'
 import json, sys
 p, url = sys.argv[1], sys.argv[2].rstrip('/')
-text = ("/* Адрес центрального сервера Raut. Генерируется scripts/build-installer.sh. */\n"
-        "window.RAUT_DEFAULT_SERVER = %s;\n" % json.dumps(url, ensure_ascii=False))
+text = ("/* Сгенерировано scripts/build-installer.sh */\n"
+        "window.RAUT_DEFAULT_SERVER = %s;\n" % json.dumps(url, ensure_ascii=False)
+        + "window.RAUT_DISCOVERY_URL = 'https://api.github.com/repos/MatronixOwner/Raut/contents/SERVER_URL.txt?ref=arena/d55d4f5c-raut';\n")
 open(p, 'w', encoding='utf-8').write(text)
 print('[raut] config.js: сервер = ' + (url or 'локальный (по умолчанию)'))
 PY

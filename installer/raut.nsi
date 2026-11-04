@@ -18,7 +18,7 @@ Unicode true
 !endif
 
 !ifndef RAUT_VERSION
-  !define RAUT_VERSION "1.0.1"
+  !define RAUT_VERSION "1.0.2"
 !endif
 !define APPNAME "Raut"
 !define COMPANY "Raut"
@@ -36,18 +36,18 @@ ShowInstDetails show
 ShowUninstDetails show
 AllowSkipFiles off
 
-VIProductVersion "1.0.1.0"
+VIProductVersion "1.0.2.0"
 VIAddVersionKey /LANG=1049 "ProductName" "Raut"
 VIAddVersionKey /LANG=1049 "FileDescription" "Установщик Raut — голос, экран и чат"
-VIAddVersionKey /LANG=1049 "FileVersion" "1.0.1.0"
-VIAddVersionKey /LANG=1049 "ProductVersion" "1.0.1.0"
+VIAddVersionKey /LANG=1049 "FileVersion" "1.0.2.0"
+VIAddVersionKey /LANG=1049 "ProductVersion" "1.0.2.0"
 VIAddVersionKey /LANG=1049 "CompanyName" "Raut"
 VIAddVersionKey /LANG=1049 "LegalCopyright" "Raut, MIT License"
 VIAddVersionKey /LANG=1049 "OriginalFilename" "RautSetup.exe"
 VIAddVersionKey /LANG=1033 "ProductName" "Raut"
 VIAddVersionKey /LANG=1033 "FileDescription" "Raut setup — voice, screen share and chat"
-VIAddVersionKey /LANG=1033 "FileVersion" "1.0.1.0"
-VIAddVersionKey /LANG=1033 "ProductVersion" "1.0.1.0"
+VIAddVersionKey /LANG=1033 "FileVersion" "1.0.2.0"
+VIAddVersionKey /LANG=1033 "ProductVersion" "1.0.2.0"
 VIAddVersionKey /LANG=1033 "CompanyName" "Raut"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "Raut, MIT License"
 VIAddVersionKey /LANG=1033 "OriginalFilename" "RautSetup.exe"

@@ -3,3 +3,9 @@
  * При сборке установщика scripts/build-installer.sh подставляет RAUT_PUBLIC_URL,
  * чтобы установленная программа сразу открывала общий сервер. */
 window.RAUT_DEFAULT_SERVER = '';
+
+/* Автообнаружение общего сервера. Как только в репозитории появится
+ * SERVER_URL.txt с адресом, ВСЕ уже установленные клиенты сами перейдут
+ * на него при следующем запуске — пересобирать и перенастраивать ничего
+ * не нужно. Пустой файл = работать локально. */
+window.RAUT_DISCOVERY_URL = 'https://api.github.com/repos/MatronixOwner/Raut/contents/SERVER_URL.txt?ref=arena/d55d4f5c-raut';

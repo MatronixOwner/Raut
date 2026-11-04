@@ -25,7 +25,7 @@ const crypto = require('node:crypto');
 const { URL } = require('node:url');
 const { attachWebSocket } = require('./ws.js');
 
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 const ROOT = path.resolve(__dirname, '..');
 
 function arg(name, fallback) {
@@ -52,6 +52,7 @@ const CFG = {
   // nodew.exe — тот же node.exe с GUI-подсистемой PE: консольного окна нет.
   // Логи в этом режиме пишутся в data/server.log, а не в несуществующий stdout.
   noConsole: process.argv.includes('--no-console') || process.env.RAUT_NO_CONSOLE === '1',
+  demo: process.argv.includes('--demo') || process.env.RAUT_DEMO === '1',
 };
 
 if (CFG.noConsole) {
@@ -93,6 +94,7 @@ const MIME = {
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -535,6 +537,43 @@ function doAuth(conn, msg) {
   broadcastPresence();
 }
 
+/** Демо-аккаунты: на сервере сразу есть пользователи, друзья и история. */
+function seedDemoUsers() {
+  const demos = [
+    { login: 'raut', name: 'Raut', pass: 'raut123', color: '#b83232' },
+    { login: 'drug', name: 'Друг', pass: 'drug123', color: '#5865f2' },
+    { login: 'team', name: 'Команда', pass: 'team123', color: '#eb459e' },
+  ];
+  let changed = false;
+  for (const d of demos) {
+    if (state.logins[d.login]) continue;
+    const salt = crypto.randomBytes(16).toString('hex');
+    const id = uid('u-');
+    state.users[id] = { id, login: d.login, name: d.name, passHash: hashPassword(d.pass, salt), salt, color: d.color, avatar: initials(d.name), createdAt: Date.now() };
+    state.logins[d.login] = id;
+    changed = true;
+  }
+  const ids = demos.map((d) => state.logins[d.login]);
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      if (!friendship(ids[i], ids[j])) {
+        state.friendships.push({ a: ids[i], b: ids[j], from: ids[i], status: 'accepted', ts: Date.now() });
+        changed = true;
+      }
+    }
+  }
+  if (!state.messages['ch-general']?.length) {
+    state.messages['ch-general'] = [{
+      id: uid('m-'), channelId: 'ch-general', authorId: ids[0], authorName: 'Raut',
+      color: '#b83232', avatar: 'RA', text: 'Все уже здесь 🎮 Заходите в голосовую «Игровая» и играйте вместе.',
+      ts: Date.now(), attachment: null,
+    }];
+    changed = true;
+  }
+  if (changed) saveState();
+  console.log('[raut] демо-пользователи: raut / drug / team (пароль = логин + 123)');
+}
+
 function broadcastPresence() {
   wsHub.broadcast({ t: 'presence', members: memberList() });
 }
@@ -914,6 +953,7 @@ server.on('error', (err) => {
 
 (async () => {
   await loadState();
+  if (CFG.demo) seedDemoUsers();
   await fsp.mkdir(UPLOAD_DIR, { recursive: true }).catch(() => {});
   const proto = CFG.cert && CFG.key ? 'https' : 'http';
   server.listen(CFG.port, CFG.host, () => {

@@ -1,5 +1,5 @@
 # Центральный сервер Raut: приложение + HTTPS-прокси + свой TURN.
-# Запуск:  cd deploy && DOMAIN=chat.example.ru TURN_PASSWORD=... docker compose up -d --build
+# Запуск:  sudo bash one-shot.sh chat.example.ru   (всё остальное делается само)
 # Подробности: deploy/README.md
 services:
   raut:
@@ -11,8 +11,9 @@ services:
       RAUT_HOST: 0.0.0.0
       RAUT_PORT: "8787"
       RAUT_DATA_DIR: /data
-      RAUT_PUBLIC_URL: "${DOMAIN:-https://chat.example.ru}"
+      RAUT_PUBLIC_URL: "https://${DOMAIN_HOST:-chat.example.ru}"
       RAUT_NAME: "Raut — общий сервер"
+      RAUT_DEMO: "${RAUT_DEMO:-1}"
       # Свой STUN/TURN на том же VPS. Без зарубежных сервисов.
       RAUT_STUN: "stun:${DOMAIN_HOST:-chat.example.ru}:3478"
       RAUT_TURN_URL: "turn:${DOMAIN_HOST:-chat.example.ru}:3478?transport=udp,turn:${DOMAIN_HOST:-chat.example.ru}:3478?transport=tcp"

@@ -211,6 +211,7 @@ function renderHome() {
       <div class="fc-info"><div class="fc-name">${esc(f.name)}</div>
         <div class="fc-sub">@${esc(f.login || '—')} · ${game ? 'Играет в ' + esc(game) : (st === 'offline' ? 'не в сети' : 'в сети')}</div></div>
       <div class="fc-actions">
+        <button class="icon-btn" data-action="play-invite" data-user="${esc(f.id)}" title="Позвать играть">${icon('monitor')}</button>
         <button class="icon-btn" data-action="open-dm" data-user="${esc(f.id)}" title="Написать">${icon('reply')}</button>
         <button class="icon-btn" data-action="friend-remove" data-user="${esc(f.id)}" title="Удалить из друзей">${icon('x')}</button>
       </div></div>`;
@@ -218,7 +219,10 @@ function renderHome() {
   const outgoing = S.outgoing.length ? `<div class="hint" style="margin:0 18px 12px">Ожидают ответа: ${S.outgoing.map((o) => '@' + esc(o.to.login)).join(', ')}</div>` : '';
   view.innerHTML = `<div class="home-hero">
       <div><h2>Друзья</h2><p>Добавляйте друзей по логину и общайтесь в личных сообщениях и голосом.</p></div>
-      <button class="btn primary" data-action="add-friend">${icon('plus')} Добавить друга</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn primary" data-action="add-friend">${icon('plus')} Добавить друга</button>
+        <button class="btn ghost" data-action="invite-link">${icon('copy')} Пригласить по ссылке</button>
+      </div>
     </div>${requests}${outgoing}<div class="friends-grid">${friends}</div>`;
 }
 
@@ -622,6 +626,16 @@ function startSession() {
     S.activeChannelId = e.detail.channel?.id || null;
     S.unread.delete(S.activeChannelId);
     renderAll();
+    if (S.pendingPlay) {
+      S.pendingPlay = false;
+      if (S.activeChannelId) {
+        S.net.send({ t: 'chat', channelId: S.activeChannelId, text: '🎮 Пойдём играть! Я уже в голосовой «Игровая» — заходи.' });
+      }
+      const g = S.guilds[0];
+      const vc = g?.channels.find((c) => c.type === 'voice' && /игров/i.test(c.name)) || g?.channels.find((c) => c.type === 'voice');
+      if (vc && S.voiceChannelId !== vc.id) joinVoice(vc.id);
+      toast('Вы в «Игровой» — друг получил приглашение', 'success');
+    }
   });
   S.net.addEventListener('presence', (e) => {
     S.members = e.detail.members;
@@ -766,7 +780,7 @@ function openSettings(tab = 'profile') {
   const nav = `<div class="modal-nav">
     <div style="font-weight:800;font-size:15px;padding:0 10px 12px">НАСТРОЙКИ</div>
     ${TABS.map((t) => `<button class="nav-item ${t.id === current ? 'active' : ''}" data-tab="${t.id}">${icon(t.icon)} <span style="vertical-align:middle;margin-left:6px">${t.label}</span></button>`).join('')}
-    <h4 style="margin-top:26px">Raut v1.0.1</h4>
+    <h4 style="margin-top:26px">Raut v1.0.2</h4>
   </div><div class="modal-body" id="settingsBody"></div>`;
   openModal(nav, {
     onMount: () => {
@@ -834,7 +848,7 @@ function settingsTab(tab) {
   if (tab === 'about') return `<h2>О программе</h2>
     <div style="display:flex;gap:20px;align-items:center;margin-bottom:22px">
       <img src="/assets/logo.png?v=2" style="width:72px;height:72px;border-radius:18px" alt="">
-      <div><div style="font-size:24px;font-weight:800">Raut</div><div class="muted">Версия 1.0.1 · независимая связь</div></div></div>
+      <div><div style="font-size:24px;font-weight:800">Raut</div><div class="muted">Версия 1.0.2 · независимая связь</div></div></div>
     <div class="kv"><span>Сервер</span><code>${esc(S.config.name || 'Raut Server')}</code></div>
     <div class="kv"><span>Протокол</span><code>WebSocket + WebRTC (Opus / VP9-H264)</code></div>
     <div class="kv"><span>Шифрование</span><code>DTLS-SRTP, сквозное</code></div>
@@ -1111,6 +1125,19 @@ function bindUI() {
         if (uid2) S.net?.send({ t: 'dm-open', userId: uid2 });
         break;
       }
+      case 'play-invite': {
+        const uid2 = actionEl.dataset.user;
+        if (uid2) { S.pendingPlay = true; S.net?.send({ t: 'dm-open', userId: uid2 }); }
+        break;
+      }
+      case 'invite-link': {
+        const link = location.href.split('#')[0];
+        navigator.clipboard?.writeText(link).then(
+          () => toast('Ссылка скопирована — отправьте её другу', 'success'),
+          () => toast('Скопируйте адрес из адресной строки', 'error')
+        );
+        break;
+      }
       case 'logout': {
         S.settings.token = ''; S.settings.login = ''; S.authPending = null;
         saveSettings();
@@ -1235,6 +1262,7 @@ function readHash() {
     } else {
       if (d.n) S.settings.name = d.n;
       if (d.c) S.settings.color = d.c;
+      if (d.l) S.settings.login = d.l;
     }
     S.settings.serverUrl = '';   // мы уже на целевом сервере
     saveSettings();
@@ -1242,7 +1270,29 @@ function readHash() {
   } catch (_) { /* ignore */ }
 }
 
-function boot() {
+/**
+ * Один файл в репозитории задаёт адрес общего сервера для ВСЕХ установленных
+ * копий. Как только владелец впишет туда домен, клиенты сами переедут на него —
+ * пользователю не нужно ничего обновлять или настраивать.
+ */
+async function discoverServer() {
+  const url = window.RAUT_DISCOVERY_URL;
+  if (!url) return '';
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2000);
+    const res = await fetch(url, {
+      headers: { Accept: 'application/vnd.github.raw+json' },
+      signal: ctrl.signal, cache: 'no-store',
+    });
+    clearTimeout(timer);
+    if (!res.ok || typeof res.text !== 'function') return '';
+    const text = (await res.text()).trim();
+    return /^https:\/\/[^\s]+$/.test(text) ? text.replace(/\/+$/, '') : '';
+  } catch (_) { return ''; }
+}
+
+async function boot() {
   readHash();
   bindUI();
   fetch('/api/config').then((r) => r.json()).then((cfg) => {
@@ -1251,6 +1301,16 @@ function boot() {
     if (cfg.publicUrl) S.config.publicUrl = cfg.publicUrl;
     renderDownloadLinks();
   }).catch(() => {});
+
+  const discovered = await discoverServer();
+  if (discovered && discovered !== location.origin && !S.authPending) {
+    S.settings.serverUrl = discovered;
+    saveSettings();
+    location.href = discovered + '/#raut=' + encodeURIComponent(JSON.stringify({
+      n: S.settings.name, c: S.settings.color, l: S.settings.login,
+    }));
+    return;
+  }
   if (S.authPending || S.settings.token) startSession();
   else byId('connectScreen').classList.remove('hidden');
 }
