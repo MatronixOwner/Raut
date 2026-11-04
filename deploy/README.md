@@ -33,6 +33,11 @@ VPS и домен**. В этом репозитории нет ни арендо
 
 ---
 
+## Где взять сервер с голосом
+
+[voice-hosting.md](voice-hosting.md) — VPS с UDP 3478, свой STUN/TURN,
+`one-shot.sh` и `check-voice.py`.
+
 ## Где взять бесплатный сервер
 
 Сравнение площадок, бесплатные домены и готовые `render.yaml` / `railway.toml`:

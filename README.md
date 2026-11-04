@@ -48,7 +48,7 @@ sudo bash deploy/one-shot.sh chat.example.ru
 Скрипт сам ставит Docker, генерирует пароль TURN, получает TLS-сертификат через Caddy,
 поднимает приложение + HTTPS/WSS + собственный STUN/TURN, создаёт пользователей и печатает
 готовую ссылку. От владельца нужен только VPS с доменом — это задача бэкенда, а не шаг в
-интерфейсе пользователя. Подробности: [deploy/README.md](deploy/README.md). Подбор бесплатных площадок (VPS, Render, Railway, Northflank) и готовые конфиги для них: [deploy/free-hosting.md](deploy/free-hosting.md). Пошаговый деплой на Northflank Sandbox: [deploy/northflank.md](deploy/northflank.md).
+интерфейсе пользователя. Подробности: [deploy/README.md](deploy/README.md). Подбор бесплатных площадок (VPS, Render, Railway, Northflank) и готовые конфиги для них: [deploy/free-hosting.md](deploy/free-hosting.md). Пошаговый деплой на Northflank Sandbox: [deploy/northflank.md](deploy/northflank.md). Хостинг, где работают и голос, и текст (свой STUN/TURN по UDP): [deploy/voice-hosting.md](deploy/voice-hosting.md).
 
 ### Почему в `.exe` окно с HTML
 
