@@ -1,20 +1,31 @@
 #!/usr/bin/env bash
-# Поднимает центральный сервер Raut с пользователями на чистом VPS одной командой:
+# Поднимает центральный сервер Raut с пользователями одной командой.
 #
-#     sudo bash one-shot.sh chat.example.ru
+#     sudo bash one-shot.sh                       # домен НЕ нужен: бесплатный sslip.io по IP
+#     sudo bash one-shot.sh chat.example.ru       # или свой домен
+#     GH_TOKEN=... sudo -E bash one-shot.sh       # + сам пропишет адрес в SERVER_URL.txt
 #
-# Нужен только домен, который уже ведёт A-записью на этот VPS.
 # Скрипт сам: ставит Docker, генерирует пароль TURN, получает TLS-сертификат
 # через Caddy, поднимает приложение, HTTPS/WSS и свой STUN/TURN, создаёт
 # демо-пользователей raut / drug / team и печатает готовую ссылку.
 set -euo pipefail
 
-DOMAIN_HOST="${1:-}"
+DOMAIN_HOST="${1:-${RAUT_DOMAIN:-}}"
+AUTO_DOMAIN=0
 if [[ -z "$DOMAIN_HOST" ]]; then
-  echo "Использование: sudo bash one-shot.sh chat.example.ru" >&2
-  exit 1
+  AUTO_DOMAIN=1
+  echo "==> Домен не задан: определяю публичный IP и беру бесплатный адрес sslip.io"
+  PUBLIC_IP="$(curl -fsS --max-time 8 https://api.ipify.org 2>/dev/null || true)"
+  [[ -z "$PUBLIC_IP" ]] && PUBLIC_IP="$(curl -fsS --max-time 8 https://ifconfig.me/ip 2>/dev/null || true)"
+  [[ -z "$PUBLIC_IP" ]] && PUBLIC_IP="$(ip -4 -o addr show scope global 2>/dev/null | awk '{split($4,a,"/");print a[1];exit}' || true)"
+  if [[ ! "$PUBLIC_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Не удалось определить публичный IP. Передайте домен: sudo bash one-shot.sh chat.example.ru" >&2
+    exit 1
+  fi
+  DOMAIN_HOST="raut.${PUBLIC_IP//./-}.sslip.io"
+  echo "==> Бесплатный HTTPS-адрес: https://$DOMAIN_HOST"
 fi
-if [[ "$DOMAIN_HOST" == http* ]]; then
+if [[ "$DOMAIN_HOST" == http* || "$DOMAIN_HOST" == */* ]]; then
   echo "Нужен голый домен без https://, например chat.example.ru" >&2
   exit 1
 fi
@@ -31,7 +42,7 @@ ACME_EMAIL="${RAUT_ACME_EMAIL:-admin@$DOMAIN_HOST}"
 echo "==> Docker"
 if ! command -v docker >/dev/null 2>&1; then
   apt-get update -qq
-  apt-get install -y -qq docker.io docker-compose-plugin curl git openssl >/dev/null
+  apt-get install -y -qq docker.io docker-compose-plugin curl git openssl python3 >/dev/null
   systemctl enable --now docker >/dev/null
 fi
 if ! docker compose version >/dev/null 2>&1; then
@@ -117,10 +128,50 @@ EOF
 echo "==> Сборка и запуск"
 docker compose up -d --build
 
+SERVER_URL="https://$DOMAIN_HOST"
+
+# Необязательно: сразу прописать адрес в репозитории, чтобы ВСЕ уже
+# установленные копии Raut переехали на общий сервер без переустановки.
+if [[ -n "${GH_TOKEN:-}" ]] && command -v python3 >/dev/null 2>&1; then
+  echo "==> Публикую адрес в SERVER_URL.txt"
+  GH_TOKEN="$GH_TOKEN" RAUT_GH_REPO="${RAUT_GH_REPO:-MatronixOwner/Raut}" \
+    RAUT_GH_BRANCH="$BRANCH" SERVER_URL="$SERVER_URL" python3 - <<'PY' || echo "(!) не удалось обновить SERVER_URL.txt — впишите адрес вручную"
+import base64, json, os, urllib.request
+repo, branch, url = os.environ['RAUT_GH_REPO'], os.environ['RAUT_GH_BRANCH'], os.environ['SERVER_URL']
+tok, api = os.environ['GH_TOKEN'], 'https://api.github.com'
+endpoint = f"{api}/repos/{repo}/contents/SERVER_URL.txt"
+def req(method, data=None):
+    r = urllib.request.Request(endpoint, data=None if data is None else json.dumps(data).encode(),
+        headers={'Authorization': 'Bearer ' + tok, 'Accept': 'application/vnd.github+json',
+                 'Content-Type': 'application/json', 'User-Agent': 'raut-one-shot'}, method=method)
+    with urllib.request.urlopen(r, timeout=15) as f:
+        return json.load(f)
+sha = None
+try:
+    get = urllib.request.Request(endpoint + '?ref=' + branch,
+        headers={'Authorization': 'Bearer ' + tok, 'Accept': 'application/vnd.github+json',
+                 'User-Agent': 'raut-one-shot'}, method='GET')
+    with urllib.request.urlopen(get, timeout=15) as f:
+        sha = json.load(f)['sha']
+except Exception:
+    pass
+body = {'message': 'deploy: общий сервер Raut ' + url, 'content': base64.b64encode((url + '\n').encode()).decode(), 'branch': branch}
+if sha:
+    body['sha'] = sha
+req('PUT', body)
+print('    SERVER_URL.txt обновлён:', url)
+PY
+fi
+
 echo "=== ГОТОВО ========================================================"
-echo "Ссылка для вас и друга:  https://$DOMAIN_HOST"
-echo "Впишите её одной строкой в SERVER_URL.txt репозитория — и ВСЕ уже"
-echo "установленные копии Raut сами перейдут на этот сервер."
+echo "Ссылка для вас и друга:  $SERVER_URL"
 echo "Демо-аккаунты: raut / raut123, drug / drug123, team / team123"
 echo "TLS, WSS и TURN настроены автоматически. Логи: docker compose logs -f"
+if [[ -z "${GH_TOKEN:-}" ]]; then
+  echo "Впишите '$SERVER_URL' одной строкой в SERVER_URL.txt репозитория —"
+  echo "и все установленные копии Raut переедут сюда без переустановки."
+fi
+if [[ "$AUTO_DOMAIN" == 1 ]]; then
+  echo "Домен бесплатный (sslip.io), покупать ничего не нужно."
+fi
 echo "===================================================================="
