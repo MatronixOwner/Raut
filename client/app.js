@@ -179,7 +179,6 @@ function renderGuildRail() {
     parts.push(`<div class="guild-icon ${g.id === S.activeGuildId ? 'active' : ''}" data-guild="${esc(g.id)}" title="${esc(g.name)}" style="background:${g.id === S.activeGuildId ? '' : esc(g.color || '#313338')}">
       <span class="guild-pill"></span>${esc(g.icon || initials(g.name))}</div>`);
   }
-  parts.push(`<div class="guild-icon rail-btn" data-action="add-guild" title="Создать сервер">${icon('plus')}</div>`);
   parts.push(`<div class="guild-icon rail-btn" data-action="about" title="О программе">${icon('download')}</div>`);
   byId('guildRail').innerHTML = parts.join('');
 }
@@ -236,10 +235,9 @@ function renderChannels() {
     byId('channelList').innerHTML = `
       <div class="channel ${!S.activeChannelId ? 'active' : ''}" data-action="show-friends">${icon('users', 'ic ch-icon')}<span class="ch-name">Друзья</span>
         ${S.requests.length ? `<span class="m-badge" style="font-size:10px;background:var(--blurple);padding:1px 5px;border-radius:3px">${S.requests.length}</span>` : ''}</div>
-      <div class="sidebar-section-title">ЛИЧНЫЕ СООБЩЕНИЯ
-        <button class="icon-btn" data-action="add-friend" title="Добавить друга">${icon('plus')}</button></div>
+      <div class="sidebar-section-title">ЛИЧНЫЕ СООБЩЕНИЯ</div>
       ${dmRows}
-      <div class="sidebar-section-title">СЕРВЕРЫ</div>
+      <div class="sidebar-section-title">ОБЩИЕ ЧАТЫ</div>
       ${S.guilds.map((g) => `<div class="channel" data-guild="${esc(g.id)}">${icon('hash', 'ic ch-icon')}<span class="ch-name">${esc(g.name)}</span></div>`).join('')}`;
     return;
   }
@@ -254,7 +252,7 @@ function renderChannels() {
   for (const cat of cats) {
     const channels = byCat.get(cat.id) || [];
     out.push(`<div class="category"><span class="cat-name">${esc(cat.name)}</span>
-      <button class="add-ch" data-action="add-channel" data-cat="${esc(cat.id)}" title="Создать канал">${icon('plus')}</button></div>`);
+      </div>`);
     for (const ch of channels) {
       const isVoice = ch.type === 'voice';
       const active = ch.id === S.activeChannelId && !isVoice;
@@ -264,7 +262,6 @@ function renderChannels() {
         ${icon(isVoice ? 'volume' : 'hash', 'ic ch-icon')}
         <span class="ch-name">${esc(ch.name)}</span>
         <span class="ch-actions">
-          ${isVoice ? '' : `<button class="icon-btn" data-action="add-channel" data-cat="${esc(ch.categoryId)}" title="Создать канал">${icon('plus')}</button>`}
         </span>
       </div>`);
       if (isVoice) {
@@ -287,13 +284,11 @@ function renderHeader() {
   const headIcon = home ? (ch ? 'user' : 'users') : (ch && ch.type === 'voice' ? 'volume' : 'hash');
   const heading = home ? (ch ? ch.name : 'Друзья') : (ch?.name || 'канал');
   const topic = home ? (ch ? 'Личные сообщения' : 'Ваши друзья и запросы') : (ch?.topic || '');
-  const addFriend = home ? `<button class="btn primary" data-action="add-friend">${icon('plus')} Добавить друга</button>` : '';
   byId('chatHeader').innerHTML = `
     ${icon(headIcon, 'ic hash')}
     <h3>${esc(heading)}</h3>
     ${topic ? `<span class="topic">${esc(topic)}</span>` : ''}
     <span class="spacer"></span>
-    ${addFriend}
     <button class="icon-btn" data-action="toggle-share" title="Демонстрация экрана">${icon(S.sharing ? 'screenOff' : 'screen')}</button>
     <button class="icon-btn ${S.memberListVisible ? 'on' : ''}" data-action="toggle-members" title="Список участников">${icon('users')}</button>
     <button class="icon-btn" data-action="search" title="Поиск по сообщениям">${icon('search')}</button>
@@ -476,7 +471,9 @@ function renderNetBanner(state, extra = {}) {
   const b = byId('netBanner');
   if (state === 'connected') { b.classList.add('hidden'); return; }
   b.classList.remove('hidden');
-  b.textContent = state === 'connecting' ? 'Подключение к серверу Raut…' : `Связь потеряна, переподключаемся (попытка ${extra.attempt || 1})…`;
+  if (state === 'connecting') b.textContent = 'Подключение…';
+  else if ((extra.attempt || 1) < 3) b.textContent = 'Восстанавливаем соединение…';
+  else b.textContent = `Нет связи с сервером, пробуем ещё (попытка ${extra.attempt})…`;
 }
 
 function updateSpeakingUI() {
@@ -540,6 +537,7 @@ function enterShell() {
   byId('shell').classList.remove('hidden');
 }
 function leaveShell(message) {
+  if (S.keepAlive) { clearInterval(S.keepAlive); S.keepAlive = null; }
   try { S.net?.close(); } catch (_) { /* ignore */ }
   S.net = null; S.me = null;
   S.friends = []; S.requests = []; S.outgoing = []; S.dms = []; S.messages = {};
@@ -562,11 +560,13 @@ function startSession() {
     if (cs) cs.textContent = e.detail.state === 'connected' ? 'в сети' : 'переподключение…';
     if (e.detail.state === 'reconnecting' && S.rtc) { S.rtc.destroy(); S.rtc = null; S.videos.clear(); S.localVideo = null; S.sharing = false; }
   });
+  // Прикладной keep-alive: обычные кадры данных, которые не режет ни один
+  // прокси (в отличие от WS-ping). Держим соединение живым всё время.
+  if (S.keepAlive) clearInterval(S.keepAlive);
+  S.keepAlive = setInterval(() => { if (S.net?.ws?.readyState === 1) S.net.send({ t: 'ping' }); }, 20000);
   S.net.addEventListener('open', () => {
     ensureRTC();
     S.net.send(S.authPending || { t: 'auth', mode: 'token', token: S.settings.token });
-    if (S.voiceChannelId) S.net.send({ t: 'join-voice', channelId: S.voiceChannelId });
-    S.net.send({ t: 'state', patch: { muted: S.muted, deafened: S.deafened, sharing: false } });
   });
   S.net.addEventListener('welcome', (e) => {
     const m = e.detail;
@@ -587,6 +587,9 @@ function startSession() {
       if (!g.channels.some((c) => c.id === S.activeChannelId)) S.activeChannelId = g.channels.find((c) => c.type === 'text')?.id;
     }
     ensureRTC().setConfig({ myId: S.me.id, iceServers: iceServers() });
+    // Всё состояние шлём ТОЛЬКО после успешного входа, иначе сервер отвечает ошибкой.
+    if (S.voiceChannelId) S.net.send({ t: 'join-voice', channelId: S.voiceChannelId });
+    S.net.send({ t: 'state', patch: { muted: S.muted, deafened: S.deafened, sharing: false } });
     renderAll(); renderDownloadLinks();
     toast(`Вы вошли как ${m.self?.name || 'гость'}`, 'success');
   });
@@ -704,7 +707,7 @@ async function toggleShare() {
   if (!S.voiceChannelId) {
     const g = activeGuild();
     const vc = g.channels.find((c) => c.type === 'voice');
-    if (!vc) return toast('Сначала создайте голосовой канал', 'error');
+    if (!vc) return toast('Сначала зайдите в голосовой канал', 'error');
     await joinVoice(vc.id);
     await new Promise((r) => setTimeout(r, 350));
   }
@@ -755,7 +758,6 @@ const TABS = [
   { id: 'profile', label: 'Мой профиль', icon: 'user' },
   { id: 'voice', label: 'Голос и звук', icon: 'mic' },
   { id: 'share', label: 'Демонстрация экрана', icon: 'screen' },
-  { id: 'network', label: 'Сеть и сервер', icon: 'globe' },
   { id: 'about', label: 'О программе', icon: 'info' },
 ];
 
@@ -764,7 +766,7 @@ function openSettings(tab = 'profile') {
   const nav = `<div class="modal-nav">
     <div style="font-weight:800;font-size:15px;padding:0 10px 12px">НАСТРОЙКИ</div>
     ${TABS.map((t) => `<button class="nav-item ${t.id === current ? 'active' : ''}" data-tab="${t.id}">${icon(t.icon)} <span style="vertical-align:middle;margin-left:6px">${t.label}</span></button>`).join('')}
-    <h4 style="margin-top:26px">Raut v1.0.0</h4>
+    <h4 style="margin-top:26px">Raut v1.0.1</h4>
   </div><div class="modal-body" id="settingsBody"></div>`;
   openModal(nav, {
     onMount: () => {
@@ -804,7 +806,7 @@ function settingsTab(tab) {
       <div><div style="font-size:20px;font-weight:700">${esc(S.settings.name)}</div><div class="muted" style="font-size:13px">Участник · в сети</div></div></div>
     <label class="field"><span>Отображаемое имя</span><input type="text" data-setting="name" value="${esc(S.settings.name)}" maxlength="32"></label>
     <label class="field"><span>Цвет профиля</span><div class="color-picker" data-colors="1">${COLORS.map((c) => `<button class="swatch ${S.settings.color === c ? 'selected' : ''}" data-color="${c}" style="background:${c};color:${c}"></button>`).join('')}</div></label>
-    <div class="hint">Имя и цвет хранятся только на этом устройстве и передаются вашему серверу Raut.</div>`;
+    <div class="hint">Имя и цвет видны только вашим друзьям.</div>`;
 
   if (tab === 'voice') return `<h2>Голос и звук</h2>
     <h3>Устройства</h3>
@@ -829,32 +831,15 @@ function settingsTab(tab) {
     ${toggleRow('Звук системы', 'Передавать звук из захватываемого приложения', 'shareSystemAudio')}
     <div class="hint">Высокое качество держится на отдельных WebRTC-соединениях для видео: голос не прерывается при запуске трансляции. Рекомендуется 1920×1080 / 60 FPS / 8 Мбит/с. При слабом канале понизьте битрейт — разрешение останется прежним.</div>`;
 
-  if (tab === 'network') return `<h2>Сеть и сервер</h2>
-    <h3>Подключение</h3>
-    <label class="field"><span>Адрес сервера</span><input type="text" data-setting="serverUrl" value="${esc(S.settings.serverUrl || location.origin)}" spellcheck="false"><small>После смены адреса нажмите «Перейти» — страница перезагрузится на новом сервере.</small></label>
-    <button class="btn primary" id="gotoServer">Перейти на сервер</button>
-    <h3>STUN / TURN</h3>
-    <label class="field"><span>STUN-серверы (через запятую)</span><input type="text" data-setting="stun" value="${esc(S.settings.stun)}" placeholder="По умолчанию — настройки сервера"></label>
-    <label class="field"><span>TURN-сервер</span><input type="text" data-setting="turnUrl" value="${esc(S.settings.turnUrl)}" placeholder="turn:turn.example.ru:3478"></label>
-    <div class="field-row">
-      <label class="field"><span>Логин TURN</span><input type="text" data-setting="turnUser" value="${esc(S.settings.turnUser)}"></label>
-      <label class="field"><span>Пароль TURN</span><input type="text" data-setting="turnPass" value="${esc(S.settings.turnPass)}"></label>
-    </div>
-    <div class="hint"><strong>Для работы через интернет в России</strong> поднимите свой coturn и укажите его здесь. Прямые P2P-соединения не всегда проходят через NAT; TURN ретранслирует звук и экран. Все данные идут только через ваш сервер — внешних сервисов нет.</div>
-    <h3>Адреса этого сервера</h3>
-    ${(S.config.lan || []).map((a) => `<div class="kv"><span>${esc(a.name)}</span><code>http://${esc(a.address)}:${esc(S.config.port || 8787)}</code></div>`).join('') || '<div class="kv"><span>LAN-адреса не найдены</span><span>—</span></div>'}
-    <div class="kv"><span>Версия сервера</span><code>${esc(S.config.version || '—')}</code></div>
-    <div class="kv"><span>Участников онлайн</span><code>${S.members.length}</code></div>`;
-
   if (tab === 'about') return `<h2>О программе</h2>
     <div style="display:flex;gap:20px;align-items:center;margin-bottom:22px">
-      <img src="/assets/logo.png" style="width:72px;height:72px;border-radius:18px" alt="">
-      <div><div style="font-size:24px;font-weight:800">Raut</div><div class="muted">Версия 1.0.0 · независимая связь</div></div></div>
+      <img src="/assets/logo.png?v=2" style="width:72px;height:72px;border-radius:18px" alt="">
+      <div><div style="font-size:24px;font-weight:800">Raut</div><div class="muted">Версия 1.0.1 · независимая связь</div></div></div>
     <div class="kv"><span>Сервер</span><code>${esc(S.config.name || 'Raut Server')}</code></div>
     <div class="kv"><span>Протокол</span><code>WebSocket + WebRTC (Opus / VP9-H264)</code></div>
     <div class="kv"><span>Шифрование</span><code>DTLS-SRTP, сквозное</code></div>
     <div class="kv"><span>Зависимости</span><code>нет внешних сервисов</code></div>
-    <div class="hint">Raut — самостоятельный сервер и клиент. Он не использует инфраструктуру Discord: вы сами решаете, где хранятся сообщения и через какой TURN идёт трафик. Установщик для Windows кладёт программу в папку пользователя и не требует прав администратора.</div>
+    <div class="hint">Raut работает без Discord и без внешних сервисов. Установщик кладёт программу в папку пользователя, не требует прав администратора и не показывает консоль.</div>
     ${S.config.installer ? `<h3>Установщик для Windows</h3>
       <a class="download-link" href="${esc(S.config.installer.url)}" download="${esc(S.config.installer.name)}">
         ${icon('download')}<span class="dl-text"><strong>Скачать ${esc(S.config.installer.name)}</strong>
@@ -896,14 +881,6 @@ function bindSettings(root) {
     const av = $('.avatar.xl', root);
     if (av) av.style.background = btn.dataset.color;
   }));
-  const goto = $('#gotoServer', root);
-  if (goto) goto.onclick = () => {
-    const url = $('[data-setting="serverUrl"]', root).value.trim();
-    if (!/^https?:\/\//i.test(url)) return toast('Адрес должен начинаться с http:// или https://', 'error');
-    S.settings.serverUrl = url.replace(/\/$/, ''); saveSettings();
-    const hash = `#raut=${encodeURIComponent(JSON.stringify({ n: S.settings.name, c: S.settings.color }))}`;
-    location.href = url.replace(/\/$/, '') + '/' + hash;
-  };
   const restart = $('#restartVoice', root);
   if (restart) restart.onclick = async () => {
     const id = S.voiceChannelId;
@@ -914,7 +891,7 @@ function bindSettings(root) {
   };
 }
 
-function openSimpleModal(title, content, onSubmit, submitLabel = 'Создать') {
+function openSimpleModal(title, content, onSubmit, submitLabel = 'Готово') {
   openModal(`<div class="modal-body" style="width:100%"><h2>${esc(title)}</h2>${content}
     <div class="modal-actions"><button class="btn ghost" id="simpleCancel">Отмена</button><button class="btn primary" id="simpleOk">${esc(submitLabel)}</button></div></div>`, {
     small: true,
@@ -924,29 +901,6 @@ function openSimpleModal(title, content, onSubmit, submitLabel = 'Создать
       $('input', byId('modalRoot'))?.focus();
     },
   });
-}
-
-function openCreateChannel(catId) {
-  openSimpleModal('Создать канал', `
-    <label class="field"><span>Название</span><input id="newChName" type="text" maxlength="40" placeholder="например, музыка"></label>
-    <label class="field"><span>Тип канала</span><select id="newChType"><option value="text">Текстовый</option><option value="voice">Голосовой</option></select></label>
-    <label class="field"><span>Описание</span><input id="newChTopic" type="text" maxlength="160" placeholder="необязательно"></label>`, () => {
-    const name = byId('newChName').value.trim();
-    if (!name) { toast('Введите название канала', 'error'); return false; }
-    S.net.send({ t: 'channel-create', guildId: S.activeGuildId, categoryId: catId, type: byId('newChType').value, name, topic: byId('newChTopic').value.trim() });
-    toast('Канал создан', 'success');
-  });
-}
-
-function openCreateGuild() {
-  openSimpleModal('Создать сервер', `
-    <label class="field"><span>Название сервера</span><input id="newGuildName" type="text" maxlength="40" placeholder="Мой сервер"></label>
-    <div class="hint">Сервер появится у всех участников, подключённых к этому Raut.</div>`, () => {
-    const name = byId('newGuildName').value.trim();
-    if (!name) { toast('Введите название', 'error'); return false; }
-    S.net.send({ t: 'guild-create', name, color: S.settings.color });
-    toast('Сервер создан', 'success');
-  }, 'Создать сервер');
 }
 
 function openAddFriend() {
@@ -1035,7 +989,7 @@ function bindUI() {
     S.authMode = mode === 'register' ? 'register' : 'login';
     $$('.auth-tab').forEach((b) => b.classList.toggle('active', b.dataset.mode === S.authMode));
     const reg = S.authMode === 'register';
-    byId('authTitle').textContent = reg ? 'Создайте аккаунт' : 'С возвращением!';
+    byId('authTitle').textContent = reg ? 'Регистрация' : 'С возвращением!';
     byId('authSubtitle').textContent = reg
       ? 'Придумайте логин и пароль — друзья найдут вас по логину.'
       : 'Введите логин и пароль — друзья и чаты уже ждут вас.';
@@ -1164,8 +1118,6 @@ function bindUI() {
         byId('authPassword').value = '';
         break;
       }
-      case 'add-guild': openCreateGuild(); break;
-      case 'add-channel': openCreateChannel(actionEl.dataset.cat); break;
       case 'about': openSettings('about'); break;
       case 'settings': openSettings('profile'); break;
       case 'voice-settings': openSettings('voice'); break;
@@ -1197,9 +1149,6 @@ function bindUI() {
   // Меню шапки сервера
   byId('guildHeader').addEventListener('click', () => {
     showPopout(250, 55, `
-      <button class="po-item" data-action="add-channel" data-cat="${esc(activeGuild().categories?.[0]?.id || '')}">${icon('plus')} Создать канал</button>
-      <button class="po-item" data-action="add-guild">${icon('plus')} Создать сервер</button>
-      <div class="po-sep"></div>
       <button class="po-item" data-action="set-game">${icon('monitor')} Во что играю</button>
       <button class="po-item" data-action="settings">${icon('gear')} Настройки</button>
       <button class="po-item" data-action="about">${icon('info')} О программе</button>`, '');

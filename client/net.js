@@ -54,7 +54,7 @@ export class Net extends EventTarget {
   _retry() {
     if (this.manualClose) return;
     this.attempt += 1;
-    const delay = Math.min(30000, 700 * 2 ** Math.min(this.attempt, 6)) + Math.random() * 300;
+    const delay = Math.min(20000, 400 * 1.6 ** Math.min(this.attempt, 6)) + Math.random() * 250;
     this._dispatch('status', { state: 'reconnecting', attempt: this.attempt, delay });
     clearTimeout(this.retryTimer);
     this.retryTimer = setTimeout(() => this._open(), delay);

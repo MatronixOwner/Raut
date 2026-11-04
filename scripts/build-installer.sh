@@ -16,7 +16,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CACHE="$ROOT/.cache"
 PAYLOAD="$CACHE/payload"
 RELEASE="${RAUT_RELEASE_DIR:-$ROOT/release}"
-VERSION="1.0.0"
+VERSION="1.0.1"
 NODE_VERSION="22.23.4"
 # Адрес общего сервера Raut. Если задан, установщик открывает его сразу,
 # и пользователю не нужно поднимать свой сервер.
@@ -66,14 +66,41 @@ else
   mv "$CACHE/package/bin/node.exe" "$CACHE/node.exe"
   rm -rf "$CACHE/package"
 fi
-python3 - "$CACHE/node.exe" <<'PY'
+python3 - "$CACHE/node.exe" "$CACHE/nodew.exe" <<'PY'
 import struct, sys
-d = open(sys.argv[1], 'rb').read(1024)
-assert d[:2] == b'MZ', 'node.exe не является PE-файлом'
-pe = struct.unpack_from('<I', d, 0x3c)[0]
-assert d[pe:pe+4] == b'PE\0\0', 'node.exe: неверная сигнатура PE'
-print('[raut] node.exe: PE, machine=0x%04x' % struct.unpack_from('<H', d, pe+4)[0])
+
+src, dst = sys.argv[1], sys.argv[2]
+data = bytearray(open(src, 'rb').read())
+assert data[:2] == b'MZ', 'node.exe не является PE-файлом'
+pe = struct.unpack_from('<I', data, 0x3c)[0]
+assert data[pe:pe+4] == b'PE\0\0', 'node.exe: неверная сигнатура PE'
+machine = struct.unpack_from('<H', data, pe + 4)[0]
+magic = struct.unpack_from('<H', data, pe + 24)[0]
+assert magic in (0x10b, 0x20b), 'неизвестный тип optional header'
+
+# Subsystem лежит по смещению 68 от начала optional header и в PE32, и в PE32+.
+# 3 = WINDOWS_CUI (консоль), 2 = WINDOWS_GUI (окон не создаёт вообще).
+SUBSYS = pe + 24 + 68
+CHECKSUM = pe + 24 + 64
+assert struct.unpack_from('<H', data, SUBSYS)[0] == 3, 'ожидалась консольная подсистема'
+struct.pack_into('<H', data, SUBSYS, 2)
+
+# Пересчёт контрольной суммы PE (поле checksum временно считаем нулевым).
+total = 0
+for i in range(0, len(data) - (len(data) % 2), 2):
+    if CHECKSUM <= i < CHECKSUM + 4:
+        continue
+    total += data[i] | (data[i + 1] << 8)
+    total = (total & 0xffff) + (total >> 16)
+total = (total & 0xffff) + (total >> 16)
+total = (total + len(data)) & 0xffffffff
+struct.pack_into('<I', data, CHECKSUM, total)
+
+open(dst, 'wb').write(bytes(data))
+print('[raut] node.exe: PE, machine=0x%04x' % machine)
+print('[raut] nodew.exe: GUI-подсистема (без консольного окна), checksum=0x%08x' % total)
 PY
+[[ -f "$CACHE/nodew.exe" ]] || die "не удалось создать nodew.exe"
 
 # --------------------------------------------------------------- payload ---
 log "Собираю payload…"
@@ -81,8 +108,8 @@ rm -rf "$PAYLOAD"
 mkdir -p "$PAYLOAD/client" "$PAYLOAD/server" "$PAYLOAD/bin"
 cp -a "$ROOT/client/." "$PAYLOAD/client/"
 cp "$ROOT/server/index.js" "$ROOT/server/ws.js" "$PAYLOAD/server/"
-cp "$CACHE/node.exe" "$PAYLOAD/bin/node.exe"
-cp "$ROOT/installer/Raut.ico" "$PAYLOAD/Raut.ico"
+cp "$CACHE/nodew.exe" "$PAYLOAD/bin/nodew.exe"
+cp "$ROOT/installer/Raut.ico" "$PAYLOAD/Raut-logo.ico"
 cp "$ROOT/installer/README.txt" "$PAYLOAD/README.txt"
 cp "$ROOT/LICENSE" "$PAYLOAD/LICENSE.txt"
 
@@ -99,7 +126,7 @@ PY
 
 # Прозрачный «состав сборки»: откуда взяты бинарники и их контрольные суммы.
 # Это ответ на ложные срабатывания антивирусов — пользователь может всё проверить.
-python3 - "$PAYLOAD" "$CACHE/node.exe" "$VERSION" "$NODE_VERSION" <<'PY'
+python3 - "$PAYLOAD" "$CACHE/nodew.exe" "$VERSION" "$NODE_VERSION" <<'PY'
 import hashlib, os, sys
 payload, node, version, node_version = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 def sha(p):
@@ -111,32 +138,37 @@ def sha(p):
 text = f"""RAUT {version} — СОСТАВ СБОРКИ И ПРОВЕРКА ПОДЛИННОСТИ
 ======================================================
 
-В установщике НЕТ скриптов WSH/VBS, скрытых окон, автозапуска
-и загрузчиков. Запуск идёт напрямую через bin\\node.exe с параметром
---open, а окно приложения открывает сам сервер через child_process.
+В установщике НЕТ скриптов WSH/VBS, скрытых окон, автозапуска,
+загрузчиков и КОНСОЛЬНОГО ОКНА. Запуск идёт напрямую через
+bin\\nodew.exe (тот же node.exe с GUI-подсистемой PE, как pythonw.exe)
+с параметрами --open --no-console. Логи пишутся в app\\data\\server.log,
+а окно приложения открывает сам сервер через child_process.
 
 СОСТАВ
-  app/client/   веб-клиент (HTML/CSS/JS, исходники в репозитории)
-  app/server/   сервер сигналинга и чата (index.js, ws.js)
-  bin/node.exe  Node.js {node_version} для Windows x64
-  Raut.ico      иконка, сгенерированная scripts/make-icon.py
-  README.txt    краткая инструкция
-  LICENSE.txt   MIT
+  app/client/     веб-клиент (HTML/CSS/JS, исходники в репозитории)
+  app/server/     сервер: аккаунты, друзья, ЛС, чат, сигналинг
+  bin/nodew.exe  Node.js {node_version} для Windows x64 с GUI-подсистемой
+                 (тот же официальный бинарник, но без консольного окна)
+  Raut-logo.ico   иконка из присланного логотипа
+  README.txt      краткая инструкция
+  LICENSE.txt     MIT
 
 ОТКУДА БИНАРНИКИ
-  node.exe : npm-пакет node-win-x64@22.23.4 (registry.npmjs.org),
-             официальная сборка Node.js, лицензия MIT.
+  nodew.exe: npm-пакет node-win-x64@22.23.4 (registry.npmjs.org),
+             официальная сборка Node.js, лицензия MIT. У неё изменено
+             только поле Subsystem в PE-заголовке (3 -> 2) и пересчитана
+             контрольная сумма PE. Код Node.js не менялся.
   установщик собран NSIS 3.13 (Linux-makensis + стабы x86-unicode)
              из electron-builder-binaries, сжатие LZMA.
 
 КОНТРОЛЬНЫЕ СУММЫ
-  node.exe SHA-256 : {sha(node)}
+  nodew.exe SHA-256: {sha(node)}
   установщик SHA-256 : см. файл RautSetup-{version}.exe.sha256
                        рядом с установщиком на сервере/GitHub.
 
 ПРОВЕРИТЬ САМОСТОЯТЕЛЬНО (PowerShell)
   Get-FileHash .\\RautSetup-{version}.exe -Algorithm SHA256
-  Get-FileHash .\\bin\\node.exe -Algorithm SHA256
+  Get-FileHash .\\bin\\nodew.exe -Algorithm SHA256
 
 ПЕРЕСОБРАТЬ ИЗ ИСХОДНИКОВ
   git clone https://github.com/MatronixOwner/Raut
@@ -150,7 +182,7 @@ text = f"""RAUT {version} — СОСТАВ СБОРКИ И ПРОВЕРКА ПО
 """
 with open(os.path.join(payload, 'BUILDINFO.txt'), 'w', encoding='utf-8') as f:
     f.write(text)
-print('[raut] BUILDINFO.txt: SHA-256 node.exe = ' + sha(node)[:16] + '…')
+print('[raut] BUILDINFO.txt: SHA-256 nodew.exe = ' + sha(node)[:16] + '…')
 PY
 
 # Синтаксическая проверка всего JS, который попадёт в установщик.
@@ -166,7 +198,7 @@ log "Компилирую установщик: $(basename "$OUT")"
   "-DRAUT_VERSION=$VERSION" \
   "-DRAUT_PAYLOAD=$PAYLOAD" \
   "-DRAUT_OUTFILE=$OUT" \
-  "-DRAUT_ICON=$PAYLOAD/Raut.ico" \
+  "-DRAUT_ICON=$PAYLOAD/Raut-logo.ico" \
   "-DRAUT_PUBLIC_URL=$RAUT_PUBLIC_URL" \
   "$ROOT/installer/raut.nsi" || die "makensis завершился с ошибкой"
 
@@ -197,10 +229,10 @@ payload, out, version, public_url = sys.argv[1], sys.argv[2], sys.argv[3], sys.a
 url_arg = (' --public-url "' + public_url + '"') if public_url else ''
 launcher = (
     '@echo off\r\n'
-    'rem Raut portable launcher (no installer, no registry, no WSH)\r\n'
+    'rem Raut portable launcher (no installer, no registry, no WSH, no console)\r\n'
     'cd /d "%~dp0"\r\n'
-    'start "Raut Server" /MIN "bin\\node.exe" "app\\server\\index.js" '
-    '--client "app\\client" --data "app\\data" --host 0.0.0.0 --port 8787 --open' + url_arg + '\r\n'
+    'start "" "bin\\nodew.exe" "app\\server\\index.js" '
+    '--client "app\\client" --data "app\\data" --host 0.0.0.0 --port 8787 --open --no-console' + url_arg + '\r\n'
 )
 with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
     z.writestr(f'Raut-{version}/Run-Raut.cmd', launcher)

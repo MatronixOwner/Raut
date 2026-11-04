@@ -1,6 +1,6 @@
 {
   "name": "raut",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Raut — автономный аналог Discord: голос, демонстрация экрана и чат на своём сервере",
   "scripts": {

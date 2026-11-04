@@ -19,6 +19,7 @@ class WSConn extends EventEmitter {
     this.fragmentOp = 0;
     this.closed = false;
     this.isAlive = true;
+    this.missed = 0;
     this.id = crypto.randomUUID();
     socket.setNoDelay(true);
     socket.on('data', (chunk) => this._onData(chunk));
@@ -87,6 +88,7 @@ class WSConn extends EventEmitter {
         return;
       case 0xA:
         this.isAlive = true;
+        this.missed = 0;
         return;
       case 0x0:
         if (this.fragmentOp === 0) return this.close(1002, 'unexpected continuation');
@@ -153,6 +155,7 @@ class WSConn extends EventEmitter {
 
   ping() {
     this.isAlive = false;
+    this.missed += 1;
     this._write(0x9, Buffer.alloc(0));
   }
 
@@ -218,7 +221,10 @@ function attachWebSocket(server, onConnection) {
 
   const heartbeat = setInterval(() => {
     for (const c of clients) {
-      if (!c.isAlive) { c.destroy(); clients.delete(c); continue; }
+      // Браузер может не ответить на ping за один интервал (сон, прокси).
+      // Рвём только после 10 пропущенных ответов (~5 мин): прокси и сон
+      // ноутбука не должны выглядеть как «связь потеряна».
+      if (c.missed >= 10) { c.destroy(); clients.delete(c); continue; }
       c.ping();
     }
   }, 30000);

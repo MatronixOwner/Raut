@@ -4,9 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#1e1f22" />
-  <meta name="description" content="Raut — голосовой чат, демонстрация экрана и текстовые каналы на своём сервере" />
+  <meta name="description" content="Raut — друзья, чат, голос и демонстрация экрана. Скачали и общаетесь." />
   <title>Raut</title>
-  <link rel="icon" href="/assets/logo.png" type="image/png" />
+  <link rel="icon" href="/assets/logo.png?v=2" type="image/png" />
+  <link rel="apple-touch-icon" href="/assets/logo.png?v=2" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -15,14 +16,14 @@
     <div class="connect-art" aria-hidden="true">
       <div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div>
       <div class="connect-caption">
-        <div class="connect-logo"><img src="/assets/logo.png" alt="" /></div>
+        <div class="connect-logo"><img src="/assets/logo.png?v=2" alt="" /></div>
         <h1>Просто общайтесь</h1>
-        <p>Зарегистрировались → добавили друга → созвон, экран и чат. Сервер уже работает: ничего устанавливать и настраивать не нужно.</p>
+        <p>Скачали → зашли → добавили друга → общаетесь, созваниваетесь и играете. Ничего настраивать не нужно.</p>
       </div>
     </div>
     <div class="connect-form">
       <div class="connect-inner">
-        <div class="connect-mobile-logo"><img src="/assets/logo.png" alt="Raut" /> <strong>Raut</strong></div>
+        <div class="connect-mobile-logo"><img src="/assets/logo.png?v=2" alt="Raut" /> <strong>Raut</strong></div>
         <div class="auth-tabs">
           <button class="auth-tab active" data-mode="login">Войти</button>
           <button class="auth-tab" data-mode="register">Регистрация</button>
@@ -45,14 +46,7 @@
           <span>Цвет профиля</span>
           <div id="colorPicker" class="color-picker"></div>
         </label>
-        <details class="auth-advanced">
-          <summary>Дополнительно: адрес сервера</summary>
-          <label class="field">
-            <span>Адрес сервера</span>
-            <input id="connectUrl" type="text" spellcheck="false" placeholder="https://..." />
-            <small>Оставьте как есть, чтобы использовать сервер Raut. Меняйте только для своего self-hosted сервера.</small>
-          </label>
-        </details>
+        <input id="connectUrl" type="hidden" value="" />
         <button id="connectBtn" class="btn primary big">Войти <span class="btn-arrow">→</span></button>
         <div class="auth-links">
           <button id="swapMode" class="link-btn">Нет аккаунта? Зарегистрироваться</button>
@@ -60,7 +54,7 @@
         </div>
         <div id="connectError" class="connect-error hidden"></div>
         <div class="connect-foot">
-          <span class="dot"></span> Аккаунты, друзья и чаты хранятся на сервере Raut · вход по логину и паролю
+          <span class="dot"></span> Друзья, чаты и звонки в одном месте · без настроек и без своего сервера
         </div>
         <a id="connectDownload" class="download-link hidden" href="#">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 11l5 5 5-5M4 21h16"/></svg>

@@ -25,7 +25,7 @@ const crypto = require('node:crypto');
 const { URL } = require('node:url');
 const { attachWebSocket } = require('./ws.js');
 
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 const ROOT = path.resolve(__dirname, '..');
 
 function arg(name, fallback) {
@@ -49,7 +49,36 @@ const CFG = {
   stun: arg('stun', process.env.RAUT_STUN || ''),
   open: process.argv.includes('--open') || process.env.RAUT_OPEN === '1',
   publicUrl: arg('public-url', process.env.RAUT_PUBLIC_URL || ''),
+  // nodew.exe — тот же node.exe с GUI-подсистемой PE: консольного окна нет.
+  // Логи в этом режиме пишутся в data/server.log, а не в несуществующий stdout.
+  noConsole: process.argv.includes('--no-console') || process.env.RAUT_NO_CONSOLE === '1',
 };
+
+if (CFG.noConsole) {
+  try {
+    fs.mkdirSync(CFG.dataDir, { recursive: true });
+    const logFile = path.join(CFG.dataDir, 'server.log');
+    const write = (...args) => {
+      const line = args.map((a) => (a instanceof Error ? (a.stack || a.message) : (typeof a === 'string' ? a : JSON.stringify(a)))).join(' ');
+      try { fs.appendFileSync(logFile, new Date().toISOString() + ' ' + line + '\r\n'); } catch (_) { /* диск недоступен — молчим */ }
+    };
+    console.log = write; console.info = write; console.warn = write; console.error = write;
+    for (const stream of [process.stdout, process.stderr]) {
+      if (!stream) continue;
+      stream.on?.('error', () => {});
+      if (typeof stream.write === 'function') {
+        const original = stream.write.bind(stream);
+        stream.write = (...a) => { try { return original(...a); } catch (_) { return true; } };
+      }
+    }
+  } catch (_) { /* если не получилось — работаем дальше */ }
+}
+
+// Ни один случайный сбой не должен ронять сервер и обрывать соединение у всех.
+process.on('uncaughtException', (err) => console.error('[raut] Необработанная ошибка:', err));
+process.on('unhandledRejection', (err) => console.error('[raut] Необработанный промис:', err));
+// Закрытие консоли/выход из сеанса Windows не должен убивать сервер.
+for (const sig of ['SIGHUP', 'SIGBREAK']) process.on(sig, () => {});
 
 const UPLOAD_DIR = path.join(CFG.dataDir, 'uploads');
 const STATE_FILE = path.join(CFG.dataDir, 'state.json');
@@ -83,18 +112,17 @@ function defaultState() {
     guilds: [
       {
         id: 'g-main',
-        name: 'Raut Community',
+        name: 'Общий чат',
         icon: 'R',
-        color: '#5865f2',
+        color: '#b83232',
         categories: [
-          { id: 'cat-text', name: 'ТЕКСТОВЫЕ КАНАЛЫ' },
-          { id: 'cat-voice', name: 'ГОЛОСОВЫЕ КАНАЛЫ' },
+          { id: 'cat-text', name: 'ЧАТ' },
+          { id: 'cat-voice', name: 'ГОЛОС' },
         ],
         channels: [
-          { id: 'ch-general', guildId: 'g-main', categoryId: 'cat-text', type: 'text', name: 'общий', topic: 'Главный чат сервера' },
-          { id: 'ch-dev', guildId: 'g-main', categoryId: 'cat-text', type: 'text', name: 'разработка', topic: 'Обсуждаем код и релизы' },
-          { id: 'ch-media', guildId: 'g-main', categoryId: 'cat-text', type: 'text', name: 'медиа', topic: 'Ссылки, картинки и мемы' },
-          { id: 'vc-lounge', guildId: 'g-main', categoryId: 'cat-voice', type: 'voice', name: 'Общая', topic: '' },
+          { id: 'ch-general', guildId: 'g-main', categoryId: 'cat-text', type: 'text', name: 'общий', topic: 'Общий чат для всех' },
+          { id: 'ch-games', guildId: 'g-main', categoryId: 'cat-text', type: 'text', name: 'игры', topic: 'Договариваемся, во что играем' },
+          { id: 'vc-lounge', guildId: 'g-main', categoryId: 'cat-voice', type: 'voice', name: 'Голосовая', topic: '' },
           { id: 'vc-gaming', guildId: 'g-main', categoryId: 'cat-voice', type: 'voice', name: 'Игровая', topic: '' },
         ],
       },
@@ -540,7 +568,9 @@ function handleMessage(conn, raw) {
   try { msg = JSON.parse(raw); } catch (_) { return; }
   if (!msg || typeof msg.t !== 'string') return;
   const me = members.get(conn.id);
-  if (!me && !['hello', 'auth', 'ping'].includes(msg.t)) return conn.send({ t: 'error', message: 'Сначала войдите в аккаунт' });
+  if (!me && !['hello', 'auth', 'ping', 'state'].includes(msg.t)) return conn.send({ t: 'error', message: 'Сначала войдите в аккаунт' });
+  // Клиент может прислать состояние микрофона в тот же тик, что и вход — просто игнорируем.
+  if (!me && msg.t === 'state') return;
 
   switch (msg.t) {
     case 'auth': return doAuth(conn, msg);
