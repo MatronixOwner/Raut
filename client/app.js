@@ -61,7 +61,7 @@ const initials = (name) => (name || '?').trim().slice(0, 2).toUpperCase();
 /* Состояние                                                           */
 /* ------------------------------------------------------------------ */
 const DEFAULT_SETTINGS = {
-  name: '', color: '#5865f2', serverUrl: '',
+  name: '', color: '#5865f2', serverUrl: '', token: '', login: '',
   audioInput: '', audioOutput: '', audioBitrate: 256,
   echoCancellation: true, noiseSuppression: false, autoGainControl: true, ptt: false,
   shareWidth: 1920, shareHeight: 1080, shareFps: 60, shareBitrate: 8000, shareSystemAudio: true,
@@ -78,7 +78,9 @@ const saveSettings = () => localStorage.setItem('raut.settings', JSON.stringify(
 const S = {
   settings: loadSettings(),
   me: null, guilds: [], members: [], messages: {}, config: {},
-  activeGuildId: 'g-main', activeChannelId: 'ch-general',
+  authMode: 'login', authPending: null,
+  friends: [], requests: [], outgoing: [], dms: [],
+  activeGuildId: '@home', activeChannelId: null,
   voiceChannelId: null, roster: [], unread: new Set(),
   muted: false, deafened: false, sharing: false,
   localVideo: null, videos: new Map(), speaking: new Set(), stats: null,
@@ -87,8 +89,19 @@ const S = {
   memberListVisible: true,
 };
 
-const activeGuild = () => S.guilds.find((g) => g.id === S.activeGuildId) || S.guilds[0] || { channels: [], categories: [], name: 'Raut' };
-const activeChannel = () => activeGuild().channels.find((c) => c.id === S.activeChannelId) || activeGuild().channels[0];
+const isHome = () => S.activeGuildId === '@home';
+const HOME_GUILD = { id: '@home', name: 'Личные сообщения', icon: 'R', channels: [], categories: [], color: '#5865f2' };
+const activeGuild = () => isHome() ? HOME_GUILD : (S.guilds.find((g) => g.id === S.activeGuildId) || S.guilds[0] || HOME_GUILD);
+const activeChannel = () => {
+  if (isHome()) return S.activeChannelId ? S.dms.find((d) => d.id === S.activeChannelId) || null : null;
+  return activeGuild().channels.find((c) => c.id === S.activeChannelId) || activeGuild().channels.find((c) => c.type === 'text') || null;
+};
+const friendStatus = (id) => {
+  const m = S.members.find((x) => x.id === id);
+  if (m) return m.status === 'invisible' ? 'offline' : (m.status || 'online');
+  return 'offline';
+};
+const gameOf = (id) => S.members.find((m) => m.id === id)?.game || S.friends.find((f) => f.id === id)?.game || '';
 const memberById = (id) => S.members.find((m) => m.id === id);
 const nameOf = (id) => memberById(id)?.name || 'Участник';
 const colorOf = (id) => memberById(id)?.color || '#5865f2';
@@ -160,7 +173,7 @@ function avatarHTML(m, cls = '') {
 /* ------------------------------------------------------------------ */
 function renderGuildRail() {
   const parts = [];
-  parts.push(`<div class="guild-icon home" data-guild="home" title="Главная"><span class="guild-pill"></span>${icon('home')}</div>`);
+  parts.push(`<div class="guild-icon home ${isHome() ? 'active' : ''}" data-guild="@home" title="Личные сообщения"><span class="guild-pill"></span>${icon('home')}</div>`);
   parts.push('<div class="rail-divider"></div>');
   for (const g of S.guilds) {
     parts.push(`<div class="guild-icon ${g.id === S.activeGuildId ? 'active' : ''}" data-guild="${esc(g.id)}" title="${esc(g.name)}" style="background:${g.id === S.activeGuildId ? '' : esc(g.color || '#313338')}">
@@ -176,7 +189,60 @@ function renderGuildHeader() {
   byId('guildHeader').innerHTML = `<span>${esc(g.name)}</span>${icon('chevron', 'ic chev')}`;
 }
 
+function renderHome() {
+  const view = byId('homeView');
+  const show = isHome() && !S.activeChannelId;
+  if (view) view.classList.toggle('hidden', !show);
+  const scroll = $('.messages-scroll');
+  const composer = $('.composer-wrap');
+  if (scroll) scroll.classList.toggle('hidden', show);
+  if (composer) composer.classList.toggle('hidden', show);
+  if (!show || !view) return;
+
+  const requests = S.requests.length ? `<div class="request-banner">
+      <span class="rb-text"><strong>Входящие запросы:</strong> ${S.requests.map((r) => esc(r.from.name)).join(', ')}</span>
+      <span class="rb-actions">${S.requests.map((r) => `<button class="btn primary" data-action="friend-accept" data-user="${esc(r.from.id)}">Принять</button>
+        <button class="btn ghost" data-action="friend-decline" data-user="${esc(r.from.id)}">Отклонить</button>`).join('')}</span>
+    </div>` : '';
+  const friends = S.friends.length ? S.friends.map((f) => {
+    const st = friendStatus(f.id);
+    const game = st === 'offline' ? '' : gameOf(f.id);
+    return `<div class="friend-card">
+      ${avatarHTML({ ...f, status: st })}
+      <div class="fc-info"><div class="fc-name">${esc(f.name)}</div>
+        <div class="fc-sub">@${esc(f.login || '—')} · ${game ? 'Играет в ' + esc(game) : (st === 'offline' ? 'не в сети' : 'в сети')}</div></div>
+      <div class="fc-actions">
+        <button class="icon-btn" data-action="open-dm" data-user="${esc(f.id)}" title="Написать">${icon('reply')}</button>
+        <button class="icon-btn" data-action="friend-remove" data-user="${esc(f.id)}" title="Удалить из друзей">${icon('x')}</button>
+      </div></div>`;
+  }).join('') : `<div class="home-empty">${icon('users')}<div>Пока нет друзей.<br>Нажмите «Добавить друга» и введите его логин.</div></div>`;
+  const outgoing = S.outgoing.length ? `<div class="hint" style="margin:0 18px 12px">Ожидают ответа: ${S.outgoing.map((o) => '@' + esc(o.to.login)).join(', ')}</div>` : '';
+  view.innerHTML = `<div class="home-hero">
+      <div><h2>Друзья</h2><p>Добавляйте друзей по логину и общайтесь в личных сообщениях и голосом.</p></div>
+      <button class="btn primary" data-action="add-friend">${icon('plus')} Добавить друга</button>
+    </div>${requests}${outgoing}<div class="friends-grid">${friends}</div>`;
+}
+
 function renderChannels() {
+  if (isHome()) {
+    const dmRows = S.dms.map((d) => {
+      const st = friendStatus(d.peer.id);
+      return `<div class="channel ${d.id === S.activeChannelId ? 'active' : ''}" data-channel="${esc(d.id)}" data-type="dm">
+        <span class="dm-status ${st === 'offline' ? 'offline' : ''}"></span>
+        <span class="ch-name">${esc(d.name)}</span>
+        ${d.lastMessage ? '' : ''}
+      </div>`;
+    }).join('') || '<div class="home-empty" style="padding:12px;font-size:12px">Напишите другу — чат появится здесь</div>';
+    byId('channelList').innerHTML = `
+      <div class="channel ${!S.activeChannelId ? 'active' : ''}" data-action="show-friends">${icon('users', 'ic ch-icon')}<span class="ch-name">Друзья</span>
+        ${S.requests.length ? `<span class="m-badge" style="font-size:10px;background:var(--blurple);padding:1px 5px;border-radius:3px">${S.requests.length}</span>` : ''}</div>
+      <div class="sidebar-section-title">ЛИЧНЫЕ СООБЩЕНИЯ
+        <button class="icon-btn" data-action="add-friend" title="Добавить друга">${icon('plus')}</button></div>
+      ${dmRows}
+      <div class="sidebar-section-title">СЕРВЕРЫ</div>
+      ${S.guilds.map((g) => `<div class="channel" data-guild="${esc(g.id)}">${icon('hash', 'ic ch-icon')}<span class="ch-name">${esc(g.name)}</span></div>`).join('')}`;
+    return;
+  }
   const g = activeGuild();
   const cats = g.categories || [];
   const byCat = new Map(cats.map((c) => [c.id, []]));
@@ -217,12 +283,17 @@ function renderChannels() {
 
 function renderHeader() {
   const ch = activeChannel();
-  if (!ch) return;
+  const home = isHome();
+  const headIcon = home ? (ch ? 'user' : 'users') : (ch && ch.type === 'voice' ? 'volume' : 'hash');
+  const heading = home ? (ch ? ch.name : 'Друзья') : (ch?.name || 'канал');
+  const topic = home ? (ch ? 'Личные сообщения' : 'Ваши друзья и запросы') : (ch?.topic || '');
+  const addFriend = home ? `<button class="btn primary" data-action="add-friend">${icon('plus')} Добавить друга</button>` : '';
   byId('chatHeader').innerHTML = `
-    ${icon(ch.type === 'voice' ? 'volume' : 'hash', 'ic hash')}
-    <h3>${esc(ch.name)}</h3>
-    ${ch.topic ? `<span class="topic">${esc(ch.topic)}</span>` : ''}
+    ${icon(headIcon, 'ic hash')}
+    <h3>${esc(heading)}</h3>
+    ${topic ? `<span class="topic">${esc(topic)}</span>` : ''}
     <span class="spacer"></span>
+    ${addFriend}
     <button class="icon-btn" data-action="toggle-share" title="Демонстрация экрана">${icon(S.sharing ? 'screenOff' : 'screen')}</button>
     <button class="icon-btn ${S.memberListVisible ? 'on' : ''}" data-action="toggle-members" title="Список участников">${icon('users')}</button>
     <button class="icon-btn" data-action="search" title="Поиск по сообщениям">${icon('search')}</button>
@@ -265,9 +336,10 @@ function renderMessages({ scroll = false } = {}) {
   const ch = activeChannel();
   const list = (ch && S.messages[ch.id]) || [];
   const intro = ch ? `<div class="channel-intro" id="channelIntro">
-      <div class="intro-icon">${icon(ch.type === 'voice' ? 'volume' : 'hash')}</div>
-      <h2>Добро пожаловать в #${esc(ch.name)}!</h2>
-      <p>Это начало канала «${esc(ch.name)}». ${esc(ch.topic || 'Общайтесь, созванивайтесь и показывайте экран.')}</p>
+      <div class="intro-icon">${icon(ch.type === 'dm' ? 'user' : ch.type === 'voice' ? 'volume' : 'hash')}</div>
+      ${ch.type === 'dm'
+        ? `<h2>${esc(ch.name)}</h2><p>Это начало личной переписки с ${esc(ch.name)}. Сообщения видите только вы вдвоём.</p>`
+        : `<h2>Добро пожаловать в #${esc(ch.name)}!</h2><p>Это начало канала «${esc(ch.name)}». ${esc(ch.topic || 'Общайтесь, созванивайтесь и показывайте экран.')}</p>`}
     </div>` : '';
   let prev = null;
   const html = list.map((m) => {
@@ -282,14 +354,23 @@ function renderMessages({ scroll = false } = {}) {
 }
 
 function renderMembers() {
-  const online = S.members.filter((m) => m.status !== 'invisible');
-  const groups = [['В СЕТИ', online]];
+  let groups;
+  if (isHome()) {
+    const online = S.friends.filter((f) => friendStatus(f.id) !== 'offline');
+    const offline = S.friends.filter((f) => friendStatus(f.id) === 'offline');
+    groups = [['В СЕТИ — ДРУЗЬЯ', online], ['НЕ В СЕТИ', offline]];
+  } else {
+    const online = S.members.filter((m) => m.status !== 'invisible');
+    groups = [['В СЕТИ', online]];
+  }
+  groups = groups.filter(([, list]) => list.length);
+  if (!groups.length) groups = [['НИКОГО НЕТ', []]];
   byId('memberList').innerHTML = groups.map(([title, list]) => `
     <div class="member-group">${title} — ${list.length}</div>
     ${list.map((m) => `<div class="member" data-member="${esc(m.id)}">
-      ${avatarHTML(m)}
+      ${avatarHTML(isHome() ? { ...m, status: friendStatus(m.id) } : m)}
       <span class="m-name" style="color:${m.id === S.me?.id ? '#fff' : esc(m.color || '#dbdee1')}">${esc(m.name)}</span>
-      <span class="m-icons">${m.muted ? icon('micOff') : ''}${m.deafened ? icon('headphonesOff') : ''}${m.sharing ? icon('screen') : ''}</span>
+      <span class="m-icons">${gameOf(m.id) ? icon('monitor') : ''}${m.muted ? icon('micOff') : ''}${m.deafened ? icon('headphonesOff') : ''}${m.sharing ? icon('screen') : ''}</span>
     </div>`).join('')}`).join('');
 }
 
@@ -302,7 +383,8 @@ function renderUserPanel() {
     </div>
     <button class="icon-btn ${S.muted ? 'active' : ''}" data-action="mute" title="${S.muted ? 'Включить микрофон' : 'Выключить микрофон'}">${icon(S.muted ? 'micOff' : 'mic')}</button>
     <button class="icon-btn ${S.deafened ? 'active' : ''}" data-action="deafen" title="${S.deafened ? 'Включить звук' : 'Выключить звук'}">${icon(S.deafened ? 'headphonesOff' : 'headphones')}</button>
-    <button class="icon-btn" data-action="settings" title="Настройки">${icon('gear')}</button>`;
+    <button class="icon-btn" data-action="settings" title="Настройки">${icon('gear')}</button>
+    <button class="icon-btn" data-action="logout" title="Выйти из аккаунта">${icon('logout')}</button>`;
 }
 
 function renderVoicePanel() {
@@ -360,7 +442,7 @@ function renderStage() {
 
 function renderAll() {
   renderGuildRail(); renderGuildHeader(); renderChannels(); renderHeader();
-  renderMessages({ scroll: true }); renderMembers(); renderUserPanel(); renderVoicePanel(); renderStage();
+  renderMessages({ scroll: true }); renderMembers(); renderUserPanel(); renderVoicePanel(); renderStage(); renderHome();
 }
 
 function renderDownloadLinks() {
@@ -453,9 +535,26 @@ function ensureRTC() {
   return S.rtc;
 }
 
-function startSession() {
+function enterShell() {
   byId('connectScreen').classList.add('hidden');
   byId('shell').classList.remove('hidden');
+}
+function leaveShell(message) {
+  try { S.net?.close(); } catch (_) { /* ignore */ }
+  S.net = null; S.me = null;
+  S.friends = []; S.requests = []; S.outgoing = []; S.dms = []; S.messages = {};
+  S.voiceChannelId = null; S.roster = []; S.unread.clear();
+  byId('shell').classList.add('hidden');
+  byId('connectScreen').classList.remove('hidden');
+  const err = byId('connectError');
+  if (err) {
+    err.textContent = message || '';
+    err.classList.toggle('hidden', !message);
+  }
+}
+
+function startSession() {
+  enterShell();
   S.net = new Net();
   S.net.addEventListener('status', (e) => {
     renderNetBanner(e.detail.state, e.detail);
@@ -465,24 +564,65 @@ function startSession() {
   });
   S.net.addEventListener('open', () => {
     ensureRTC();
-    S.net.send({ t: 'hello', name: S.settings.name, color: S.settings.color, avatar: initials(S.settings.name) });
+    S.net.send(S.authPending || { t: 'auth', mode: 'token', token: S.settings.token });
     if (S.voiceChannelId) S.net.send({ t: 'join-voice', channelId: S.voiceChannelId });
     S.net.send({ t: 'state', patch: { muted: S.muted, deafened: S.deafened, sharing: false } });
   });
   S.net.addEventListener('welcome', (e) => {
     const m = e.detail;
-    S.me = m.self; S.guilds = m.guilds; S.members = m.members;
+    S.me = m.self; S.guilds = m.guilds || []; S.members = m.members || [];
     S.messages = m.messages || {}; S.config = m.config || {};
-    if (!S.guilds.some((g) => g.id === S.activeGuildId)) S.activeGuildId = S.guilds[0]?.id;
-    const g = activeGuild();
-    if (!g.channels.some((c) => c.id === S.activeChannelId)) S.activeChannelId = g.channels.find((c) => c.type === 'text')?.id;
+    S.friends = m.friends || []; S.requests = m.requests || []; S.outgoing = m.outgoing || [];
+    S.dms = m.dms || [];
+    S.authPending = null;
+    if (m.token) { S.settings.token = m.token; S.settings.login = m.self.login || ''; }
+    if (m.self?.name) S.settings.name = m.self.name;
+    if (m.self?.color) S.settings.color = m.self.color;
+    saveSettings();
+    if (!isHome() && !S.guilds.some((g) => g.id === S.activeGuildId)) S.activeGuildId = '@home';
+    if (isHome()) {
+      if (S.activeChannelId && !S.dms.some((d) => d.id === S.activeChannelId)) S.activeChannelId = null;
+    } else {
+      const g = activeGuild();
+      if (!g.channels.some((c) => c.id === S.activeChannelId)) S.activeChannelId = g.channels.find((c) => c.type === 'text')?.id;
+    }
     ensureRTC().setConfig({ myId: S.me.id, iceServers: iceServers() });
     renderAll(); renderDownloadLinks();
-    toast(`Подключено к «${m.config?.name || 'Raut'}»`, 'success');
+    toast(`Вы вошли как ${m.self?.name || 'гость'}`, 'success');
+  });
+  S.net.addEventListener('auth-error', (e) => {
+    S.settings.token = ''; S.settings.login = '';
+    S.authPending = null;
+    saveSettings();
+    leaveShell(e.detail?.message || 'Не удалось войти');
+    renderUserPanel();
+  });
+  S.net.addEventListener('error', (e) => toast(e.detail.message, 'error'));
+  S.net.addEventListener('notice', (e) => toast(e.detail.message, 'info'));
+  S.net.addEventListener('friends', (e) => {
+    S.friends = e.detail.friends || [];
+    S.requests = e.detail.requests || [];
+    S.outgoing = e.detail.outgoing || [];
+    renderHome(); renderChannels(); renderMembers();
+  });
+  S.net.addEventListener('friend-request', (e) => {
+    toast(`${e.detail?.from?.name || 'Кто-то'} хочет добавить вас в друзья`, 'info');
+    S.net?.send({ t: 'friends-refresh' });
+  });
+  S.net.addEventListener('dms', (e) => {
+    S.dms = e.detail.dms || [];
+    renderChannels(); renderHome();
+  });
+  S.net.addEventListener('dm-opened', (e) => {
+    S.dms = e.detail.dms || S.dms;
+    S.activeGuildId = '@home';
+    S.activeChannelId = e.detail.channel?.id || null;
+    S.unread.delete(S.activeChannelId);
+    renderAll();
   });
   S.net.addEventListener('presence', (e) => {
     S.members = e.detail.members;
-    renderMembers(); renderChannels(); renderUserPanel(); renderVoicePanel(); renderStage();
+    renderMembers(); renderChannels(); renderHome(); renderUserPanel(); renderVoicePanel(); renderStage();
   });
   S.net.addEventListener('guilds', (e) => { S.guilds = e.detail.guilds; renderGuildRail(); renderGuildHeader(); renderChannels(); renderHeader(); });
   S.net.addEventListener('chat', (e) => {
@@ -490,10 +630,7 @@ function startSession() {
     (S.messages[m.channelId] ||= []).push(m);
     if (m.channelId === S.activeChannelId) renderMessages({ scroll: true });
     else { S.unread.add(m.channelId); renderChannels(); }
-    if (m.authorId !== S.me?.id && S.settings.name) {
-      // Лёгкое уведомление без системных прав
-      if (document.hidden) document.title = '(1) Raut';
-    }
+    if (m.authorId !== S.me?.id && document.hidden) document.title = '(1) Raut';
   });
   S.net.addEventListener('typing', (e) => {
     const { channelId, userId, name } = e.detail;
@@ -511,7 +648,6 @@ function startSession() {
     const m = e.detail;
     ensureRTC().handleSignal(m.from, m.kind, { sdp: m.sdp, candidate: m.candidate }, m.media || 'audio');
   });
-  S.net.addEventListener('error', (e) => toast(e.detail.message, 'error'));
   S.net.connect(wsURL());
 }
 
@@ -813,6 +949,27 @@ function openCreateGuild() {
   }, 'Создать сервер');
 }
 
+function openAddFriend() {
+  openSimpleModal('Добавить друга', `
+    <label class="field"><span>Логин друга</span><input id="friendLogin" type="text" maxlength="24" spellcheck="false" placeholder="например, alex"></label>
+    <div class="hint">Друг должен быть зарегистрирован на этом же сервере Raut. Спросите его логин — он виден в профиле.</div>`, () => {
+    const login = byId('friendLogin').value.trim().toLowerCase();
+    if (!/^[a-z0-9_.-]{3,24}$/.test(login)) { toast('Введите корректный логин (3–24 символа, латиница)', 'error'); return false; }
+    S.net?.send({ t: 'friend-add', login });
+  }, 'Отправить запрос');
+}
+
+function openSetGame() {
+  openSimpleModal('Во что играю', `
+    <label class="field"><span>Название игры</span><input id="gameName" type="text" maxlength="60" placeholder="например, Counter-Strike 2"></label>
+    <div class="hint">Друзья увидят это у себя в списке друзей. Оставьте поле пустым, чтобы убрать статус.</div>`, () => {
+    const game = byId('gameName').value.trim();
+    S.net?.send({ t: 'state', patch: { game } });
+    if (S.me) S.me.game = game;
+    toast(game ? 'Статус обновлён: играет в ' + game : 'Игровой статус убран');
+  }, 'Сохранить');
+}
+
 function openSearch() {
   openSimpleModal('Поиск по сообщениям', `
     <label class="field"><span>Что ищем</span><input id="searchQuery" type="text" placeholder="текст сообщения"></label>
@@ -830,7 +987,9 @@ function openSearch() {
 }
 
 function openProfile(id) {
-  const m = memberById(id);
+  const friend = S.friends.find((f) => f.id === id);
+  const live = memberById(id);
+  const m = (id === S.me?.id ? S.me : null) || (friend ? { ...friend, ...(live || {}) } : live);
   if (!m) return;
   const isMe = id === S.me?.id;
   const inVoice = !!m.voiceChannelId;
@@ -839,8 +998,9 @@ function openProfile(id) {
   const html = `<div class="profile-banner" style="background:${esc(m.color)}"></div>
     <div class="profile-body">${avatarHTML(m, 'xl')}
       <div class="profile-name">${esc(m.name)}</div>
-      <div class="profile-tag">${m.id === S.me?.id ? 'Это вы' : 'Участник'} · ${m.voiceChannelId ? 'в голосовом канале' : 'в сети'}</div>
+      <div class="profile-tag">${m.login ? '@' + esc(m.login) : (isMe ? 'Это вы' : 'Участник')} · ${m.voiceChannelId ? 'в голосовом канале' : (friendStatus(m.id) === 'offline' ? 'не в сети' : 'в сети')}${gameOf(id) ? ' · Играет в ' + esc(gameOf(id)) : ''}</div>
       ${inVoice && !isMe ? volume : ''}
+      ${S.friends.some((f) => f.id === id) ? `<div class="profile-box"><button class="btn primary" data-action="open-dm" data-user="${esc(id)}">Написать</button></div>` : ''}
       <div class="profile-box"><h5>ID</h5><div class="value">${esc(m.id)}</div></div>
     </div>`;
   showPopout(0, 0, html, 'profile-card');
@@ -859,30 +1019,72 @@ function positionPopoutFor(el) {
 /* Обработчики событий                                                 */
 /* ------------------------------------------------------------------ */
 function bindUI() {
-  // Экран подключения
+  // Экран входа / регистрации
+  const defaultServer = (window.RAUT_DEFAULT_SERVER || '').replace(/\/+$/, '');
   byId('colorPicker').innerHTML = COLORS.map((c) => `<button class="swatch ${S.settings.color === c ? 'selected' : ''}" data-c="${c}" style="background:${c};color:${c}"></button>`).join('');
   byId('colorPicker').addEventListener('click', (e) => {
     const b = e.target.closest('[data-c]'); if (!b) return;
     S.settings.color = b.dataset.c; saveSettings();
     $$('#colorPicker .swatch').forEach((x) => x.classList.toggle('selected', x === b));
   });
-  byId('connectName').value = S.settings.name;
-  byId('connectUrl').value = S.settings.serverUrl || location.origin;
-  byId('connectBtn').onclick = () => {
-    const name = byId('connectName').value.trim();
-    if (!name) { byId('connectError').textContent = 'Введите отображаемое имя'; byId('connectError').classList.remove('hidden'); return; }
-    const url = byId('connectUrl').value.trim().replace(/\/$/, '');
-    S.settings.name = name;
-    S.settings.serverUrl = url === location.origin ? '' : url;
+  byId('connectName').value = S.settings.name || '';
+  byId('authLogin').value = S.settings.login || '';
+  byId('connectUrl').value = S.settings.serverUrl || defaultServer || location.origin;
+
+  function setAuthMode(mode) {
+    S.authMode = mode === 'register' ? 'register' : 'login';
+    $$('.auth-tab').forEach((b) => b.classList.toggle('active', b.dataset.mode === S.authMode));
+    const reg = S.authMode === 'register';
+    byId('authTitle').textContent = reg ? 'Создайте аккаунт' : 'С возвращением!';
+    byId('authSubtitle').textContent = reg
+      ? 'Придумайте логин и пароль — друзья найдут вас по логину.'
+      : 'Введите логин и пароль — друзья и чаты уже ждут вас.';
+    byId('authNameField').classList.toggle('hidden', !reg);
+    byId('authColorField').classList.toggle('hidden', !reg);
+    byId('connectBtn').innerHTML = reg ? 'Зарегистрироваться <span class="btn-arrow">→</span>' : 'Войти <span class="btn-arrow">→</span>';
+    byId('authPassword').autocomplete = reg ? 'new-password' : 'current-password';
+    byId('swapMode').textContent = reg ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться';
+    byId('connectError').classList.add('hidden');
+  }
+  $$('.auth-tab').forEach((b) => b.addEventListener('click', () => setAuthMode(b.dataset.mode)));
+  byId('swapMode').onclick = () => setAuthMode(S.authMode === 'register' ? 'login' : 'register');
+
+  function submitAuth(guest = false) {
+    const err = byId('connectError');
+    const url = byId('connectUrl').value.trim().replace(/\/+$/, '');
+    let payload;
+    if (guest) {
+      payload = { t: 'auth', mode: 'guest', name: byId('connectName').value.trim() || 'Гость', color: S.settings.color };
+    } else {
+      const login = byId('authLogin').value.trim().toLowerCase();
+      const password = byId('authPassword').value;
+      const name = byId('connectName').value.trim();
+      if (!login || !password) { err.textContent = 'Введите логин и пароль'; err.classList.remove('hidden'); return; }
+      if (S.authMode === 'register' && !/^[a-z0-9_.-]{3,24}$/.test(login)) { err.textContent = 'Логин: 3–24 символа — латиница, цифры, . - _'; err.classList.remove('hidden'); return; }
+      if (S.authMode === 'register' && password.length < 6) { err.textContent = 'Пароль должен быть не короче 6 символов'; err.classList.remove('hidden'); return; }
+      payload = S.authMode === 'register'
+        ? { t: 'auth', mode: 'register', login, password, name, color: S.settings.color }
+        : { t: 'auth', mode: 'login', login, password };
+      S.settings.login = login;
+    }
+    S.settings.name = payload.name || S.settings.name;
+    S.settings.serverUrl = url && url !== location.origin ? url : '';
     saveSettings();
     if (S.settings.serverUrl) {
-      location.href = S.settings.serverUrl + '/#raut=' + encodeURIComponent(JSON.stringify({ n: name, c: S.settings.color }));
+      // Hash не передаётся в HTTP-запросе: данные входа попадают только в новый origin.
+      location.href = S.settings.serverUrl + '/#raut=' + encodeURIComponent(JSON.stringify(payload));
       return;
     }
+    err.classList.add('hidden');
+    S.authPending = payload;
     startSession();
-  };
-  byId('connectUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') byId('connectBtn').click(); });
-  byId('connectName').addEventListener('keydown', (e) => { if (e.key === 'Enter') byId('connectBtn').click(); });
+  }
+  byId('connectBtn').onclick = () => submitAuth(false);
+  byId('guestBtn').onclick = () => submitAuth(true);
+  [byId('authLogin'), byId('authPassword'), byId('connectName'), byId('connectUrl')].forEach((el) => {
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') byId('connectBtn').click(); });
+  });
+  setAuthMode('login');
 
   // Клик по всему приложению (делегирование)
   document.addEventListener('click', async (e) => {
@@ -892,9 +1094,12 @@ function bindUI() {
 
     if (t.closest('[data-guild]')) {
       const id = t.closest('[data-guild]').dataset.guild;
-      S.activeGuildId = id === 'home' ? S.guilds[0]?.id : id;
-      const g = activeGuild();
-      S.activeChannelId = g.channels.find((c) => c.type === 'text')?.id || g.channels[0]?.id;
+      S.activeGuildId = id === 'home' ? (S.guilds[0]?.id || '@home') : id;
+      if (isHome()) S.activeChannelId = null;
+      else {
+        const g = activeGuild();
+        S.activeChannelId = g.channels.find((c) => c.type === 'text')?.id || g.channels[0]?.id;
+      }
       S.unread.delete(S.activeChannelId);
       renderAll();
       return;
@@ -904,7 +1109,7 @@ function bindUI() {
       const ch = node.dataset.channel;
       if (node.dataset.type === 'voice') { await joinVoice(ch); return; }
       S.activeChannelId = ch; S.unread.delete(ch);
-      renderChannels(); renderHeader(); renderMessages({ scroll: true });
+      renderAll();
       return;
     }
     if (t.closest('[data-member]') && !action) {
@@ -937,6 +1142,28 @@ function bindUI() {
     if (!action) return;
     closePopout();
     switch (action) {
+      case 'show-friends': S.activeGuildId = '@home'; S.activeChannelId = null; renderAll(); break;
+      case 'add-friend': openAddFriend(); break;
+      case 'set-game': openSetGame(); break;
+      case 'friend-accept':
+      case 'friend-decline':
+      case 'friend-remove': {
+        const uid2 = actionEl.dataset.user;
+        if (uid2) S.net?.send({ t: action, userId: uid2 });
+        break;
+      }
+      case 'open-dm': {
+        const uid2 = actionEl.dataset.user;
+        if (uid2) S.net?.send({ t: 'dm-open', userId: uid2 });
+        break;
+      }
+      case 'logout': {
+        S.settings.token = ''; S.settings.login = ''; S.authPending = null;
+        saveSettings();
+        leaveShell('');
+        byId('authPassword').value = '';
+        break;
+      }
       case 'add-guild': openCreateGuild(); break;
       case 'add-channel': openCreateChannel(actionEl.dataset.cat); break;
       case 'about': openSettings('about'); break;
@@ -973,6 +1200,7 @@ function bindUI() {
       <button class="po-item" data-action="add-channel" data-cat="${esc(activeGuild().categories?.[0]?.id || '')}">${icon('plus')} Создать канал</button>
       <button class="po-item" data-action="add-guild">${icon('plus')} Создать сервер</button>
       <div class="po-sep"></div>
+      <button class="po-item" data-action="set-game">${icon('monitor')} Во что играю</button>
       <button class="po-item" data-action="settings">${icon('gear')} Настройки</button>
       <button class="po-item" data-action="about">${icon('info')} О программе</button>`, '');
     const po = $('.popout');
@@ -1050,9 +1278,16 @@ function readHash() {
   if (!m) return;
   try {
     const d = JSON.parse(decodeURIComponent(m[1]));
-    if (d.n) S.settings.name = d.n;
-    if (d.c) S.settings.color = d.c;
-    S.settings.serverUrl = location.origin;
+    if (d?.t === 'auth') {
+      S.authPending = d;
+      if (d.name) S.settings.name = d.name;
+      if (d.color) S.settings.color = d.color;
+      if (d.login) S.settings.login = d.login;
+    } else {
+      if (d.n) S.settings.name = d.n;
+      if (d.c) S.settings.color = d.c;
+    }
+    S.settings.serverUrl = '';   // мы уже на целевом сервере
     saveSettings();
     history.replaceState(null, '', location.pathname + location.search);
   } catch (_) { /* ignore */ }
@@ -1064,9 +1299,10 @@ function boot() {
   fetch('/api/config').then((r) => r.json()).then((cfg) => {
     S.config.installer = cfg.installer || null;
     S.config.portable = cfg.portable || null;
+    if (cfg.publicUrl) S.config.publicUrl = cfg.publicUrl;
     renderDownloadLinks();
   }).catch(() => {});
-  if (S.settings.name) startSession();
+  if (S.authPending || S.settings.token) startSession();
   else byId('connectScreen').classList.remove('hidden');
 }
 

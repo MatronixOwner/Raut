@@ -1,0 +1,12 @@
+.git
+.github
+.cache
+release
+data
+node_modules
+deploy
+*.md
+!README.md
+scripts
+installer
+assets

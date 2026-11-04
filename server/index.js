@@ -44,8 +44,11 @@ const CFG = {
   turnUrl: arg('turn-url', process.env.RAUT_TURN_URL || ''),
   turnUser: arg('turn-user', process.env.RAUT_TURN_USER || ''),
   turnPass: arg('turn-pass', process.env.RAUT_TURN_PASS || ''),
-  stun: arg('stun', process.env.RAUT_STUN || 'stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302'),
+  // Никаких зарубежных сервисов по умолчанию: WebRTC в одной сети ходит напрямую,
+  // а для выхода в интернет администратор задаёт свой STUN/TURN (см. README).
+  stun: arg('stun', process.env.RAUT_STUN || ''),
   open: process.argv.includes('--open') || process.env.RAUT_OPEN === '1',
+  publicUrl: arg('public-url', process.env.RAUT_PUBLIC_URL || ''),
 };
 
 const UPLOAD_DIR = path.join(CFG.dataDir, 'uploads');
@@ -96,7 +99,12 @@ function defaultState() {
         ],
       },
     ],
-    messages: {},
+    messages: {},   // текстовые каналы серверов
+    users: {},      // аккаунты: id -> {id, login, name, passHash, salt, color, avatar, createdAt}
+    logins: {},     // логин (нижний регистр) -> id
+    tokens: {},     // sha256(токена) -> id  (сессия переживает перезапуск сервера)
+    friendships: [], // {a, b, from, status: 'pending'|'accepted', ts}
+    dms: {},        // id канала -> {id, participants:[id,id], messages:[]}
   };
 }
 
@@ -108,7 +116,16 @@ async function loadState() {
     const raw = await fsp.readFile(STATE_FILE, 'utf8');
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed.guilds) && parsed.guilds.length) {
-      state = { ...defaultState(), ...parsed };
+      const d = defaultState();
+      state = {
+        ...d, ...parsed,
+        users: parsed.users || {},
+        logins: parsed.logins || {},
+        tokens: parsed.tokens || {},
+        friendships: parsed.friendships || [],
+        dms: parsed.dms || {},
+        messages: parsed.messages || {},
+      };
     }
   } catch (_) { /* первый запуск */ }
 }
@@ -171,7 +188,11 @@ const publicRelease = (e) => e ? { name: e.name, size: e.size, url: e.url, sha: 
 function openClientWindow() {
   if (process.platform !== 'win32') return; // в Linux/macOS окно открывает пользователь
   const { spawn } = require('node:child_process');
-  const url = `${CFG.cert && CFG.key ? 'https' : 'http'}://127.0.0.1:${CFG.port}/`;
+  // Если сборка указывает центральный сервер, установщик открывает сразу его:
+  // пользователю не нужно запускать или настраивать свой сервер.
+  const url = CFG.publicUrl
+    ? CFG.publicUrl.replace(/\/+$/, '') + '/'
+    : `${CFG.cert && CFG.key ? 'https' : 'http'}://127.0.0.1:${CFG.port}/`;
   const pf = process.env.ProgramFiles || 'C:\\Program Files';
   const pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
   const local = process.env.LOCALAPPDATA || '';
@@ -320,11 +341,170 @@ function publicMember(m) {
     sharing: !!m.sharing,
     camera: !!m.camera,
     status: m.status || 'online',
+    game: m.game || '',
   };
 }
 
 function memberList() {
   return [...members.values()].map(publicMember);
+}
+
+/* ------------------------------------------------------------------ */
+/* Аккаунты, друзья и личные сообщения (центральный сервер)            */
+/* ------------------------------------------------------------------ */
+const initials = (n) => String(n || '?').trim().slice(0, 2).toUpperCase();
+const validColor = (c) => /^#[0-9a-f]{6}$/i.test(c) ? c : COLORS[Math.floor(Math.random() * COLORS.length)];
+
+function hashPassword(pass, salt) {
+  return crypto.scryptSync(String(pass), salt, 64).toString('hex');
+}
+const tokenHash = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
+const userById = (id) => state.users[id] || null;
+
+function publicUser(u) {
+  if (!u) return null;
+  return { id: u.id, login: u.login, name: u.name, color: u.color, avatar: u.avatar || '', createdAt: u.createdAt };
+}
+function onlineMember(userId) {
+  for (const m of members.values()) if (m.id === userId) return m;
+  return null;
+}
+function connForUser(userId) {
+  for (const c of wsHub.clients) if (members.get(c.id)?.id === userId) return c;
+  return null;
+}
+function sendToUser(userId, obj) { const c = connForUser(userId); if (c) c.send(obj); }
+function friendship(a, b) {
+  return state.friendships.find((f) => (f.a === a && f.b === b) || (f.a === b && f.b === a));
+}
+function friendIds(userId) {
+  return state.friendships
+    .filter((f) => f.status === 'accepted' && (f.a === userId || f.b === userId))
+    .map((f) => (f.a === userId ? f.b : f.a));
+}
+function friendsPayload(userId) {
+  const friends = friendIds(userId).map((id) => {
+    const u = publicUser(userById(id));
+    if (!u) return null;
+    const m = onlineMember(id);
+    return { ...u, status: m ? (m.status || 'online') : 'offline', game: m?.game || '', voiceChannelId: m?.voiceChannelId || null, muted: !!m?.muted, deafened: !!m?.deafened, sharing: !!m?.sharing };
+  }).filter(Boolean);
+  const requests = state.friendships.filter((f) => f.status === 'pending' && f.b === userId)
+    .map((f) => ({ from: publicUser(userById(f.from)), ts: f.ts })).filter((r) => r.from);
+  const outgoing = state.friendships.filter((f) => f.status === 'pending' && f.from === userId)
+    .map((f) => ({ to: publicUser(userById(f.b)), ts: f.ts })).filter((r) => r.to);
+  return { friends, requests, outgoing };
+}
+function sendFriends(userId) { sendToUser(userId, { t: 'friends', ...friendsPayload(userId) }); }
+
+function dmChannelFor(a, b) {
+  return Object.values(state.dms).find((d) => d.participants.includes(a) && d.participants.includes(b));
+}
+function dmListFor(userId) {
+  return Object.values(state.dms)
+    .filter((d) => d.participants.includes(userId))
+    .map((d) => {
+      const peerId = d.participants.find((p) => p !== userId);
+      const peer = publicUser(userById(peerId)) || { id: peerId, name: 'Участник', color: '#5865f2', avatar: 'УЧ' };
+      const m = onlineMember(peerId);
+      const last = d.messages[d.messages.length - 1];
+      return {
+        id: d.id, type: 'dm', name: peer.name, topic: '',
+        peer: { ...peer, status: m ? 'online' : 'offline' },
+        lastMessage: last ? { text: last.text, ts: last.ts, authorId: last.authorId } : null,
+      };
+    })
+    .sort((x, y) => (y.lastMessage?.ts || 0) - (x.lastMessage?.ts || 0));
+}
+function allMessagesFor(userId) {
+  const out = {};
+  for (const g of state.guilds) for (const ch of g.channels) if (ch.type === 'text') out[ch.id] = state.messages[ch.id] || [];
+  for (const d of Object.values(state.dms)) if (d.participants.includes(userId)) out[d.id] = d.messages;
+  return out;
+}
+function makeMember(conn, { id, login = '', name, color, avatar = '', guest = false, token = '' }) {
+  return {
+    id, login, guest, token, conn,
+    name, color, avatar: avatar || initials(name),
+    voiceChannelId: null, muted: false, deafened: false, sharing: false, camera: false,
+    status: 'online', game: '', lastChat: 0,
+  };
+}
+function sendWelcome(conn, me, token, guest) {
+  const social = guest ? { friends: [], requests: [], outgoing: [] } : friendsPayload(me.id);
+  conn.send({
+    t: 'welcome',
+    token: token || '',
+    self: { ...publicMember(me), login: me.login || '', guest: !!guest },
+    guilds: state.guilds,
+    messages: allMessagesFor(me.id),
+    dms: guest ? [] : dmListFor(me.id),
+    ...social,
+    members: memberList(),
+    config: {
+      name: CFG.name,
+      version: VERSION,
+      iceServers: iceServers(),
+      maxUpload: MAX_UPLOAD,
+      lan: lanAddresses(),
+      port: CFG.port,
+      publicUrl: CFG.publicUrl,
+      installer: publicRelease(installerInfo()),
+      portable: publicRelease(portableInfo()),
+    },
+  });
+  if (!guest) for (const id of friendIds(me.id)) sendFriends(id);
+}
+
+function doAuth(conn, msg) {
+  const mode = String(msg.mode || '');
+  const fail = (message) => conn.send({ t: 'auth-error', message });
+  let user = null, token = null;
+
+  if (mode === 'register') {
+    const login = cleanText(msg.login, 24).toLowerCase();
+    const pass = String(msg.password || '');
+    const name = cleanText(msg.name, 32) || login;
+    if (!/^[a-z0-9_.-]{3,24}$/.test(login)) return fail('Логин: 3–24 символа — латиница, цифры, точка, дефис или подчёркивание');
+    if (pass.length < 6) return fail('Пароль должен быть не короче 6 символов');
+    if (state.logins[login]) return fail('Этот логин уже занят');
+    const salt = crypto.randomBytes(16).toString('hex');
+    const id = uid('u-');
+    user = { id, login, name, passHash: hashPassword(pass, salt), salt, color: validColor(msg.color), avatar: initials(name), createdAt: Date.now() };
+    state.users[id] = user;
+    state.logins[login] = id;
+    token = crypto.randomBytes(32).toString('hex');
+    state.tokens[tokenHash(token)] = id;
+    saveState();
+  } else if (mode === 'login') {
+    const login = cleanText(msg.login, 24).toLowerCase();
+    user = state.users[state.logins[login]];
+    if (!user) return fail('Неверный логин или пароль');
+    const given = Buffer.from(hashPassword(String(msg.password || ''), user.salt), 'hex');
+    const expected = Buffer.from(user.passHash, 'hex');
+    if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return fail('Неверный логин или пароль');
+    token = crypto.randomBytes(32).toString('hex');
+    state.tokens[tokenHash(token)] = user.id;
+    saveState();
+  } else if (mode === 'token') {
+    user = state.users[state.tokens[tokenHash(String(msg.token || ''))]];
+    if (!user) return fail('Сессия истекла — войдите снова');
+    token = String(msg.token);
+  } else if (mode === 'guest') {
+    const name = cleanText(msg.name, 32) || 'Гость';
+    const m = makeMember(conn, { id: conn.id, name, color: validColor(msg.color), avatar: initials(name), guest: true });
+    members.set(conn.id, m);
+    sendWelcome(conn, m, '', true);
+    broadcastPresence();
+    return;
+  } else {
+    return fail('Неизвестный способ входа');
+  }
+
+  const m = makeMember(conn, { id: user.id, login: user.login, name: user.name, color: user.color, avatar: user.avatar, token });
+  members.set(conn.id, m);
+  sendWelcome(conn, m, token, false);
+  broadcastPresence();
 }
 
 function broadcastPresence() {
@@ -347,7 +527,7 @@ function broadcastRoster(channelId) {
 }
 
 function connById(id) {
-  for (const c of wsHub.clients) if (c.id === id) return c;
+  for (const c of wsHub.clients) if (members.get(c.id)?.id === id) return c;
   return null;
 }
 
@@ -360,50 +540,69 @@ function handleMessage(conn, raw) {
   try { msg = JSON.parse(raw); } catch (_) { return; }
   if (!msg || typeof msg.t !== 'string') return;
   const me = members.get(conn.id);
-  if (!me && msg.t !== 'hello') return conn.send({ t: 'error', message: 'Сначала представьтесь' });
+  if (!me && !['hello', 'auth', 'ping'].includes(msg.t)) return conn.send({ t: 'error', message: 'Сначала войдите в аккаунт' });
 
   switch (msg.t) {
-    case 'hello': {
-      const name = cleanText(msg.name, 32) || 'Гость';
-      const connMember = {
-        id: conn.id,
-        conn,
-        name,
-        color: /^#[0-9a-f]{6}$/i.test(msg.color) ? msg.color : COLORS[members.size % COLORS.length],
-        avatar: cleanText(msg.avatar, 8).slice(0, 2).toUpperCase(),
-        voiceChannelId: null,
-        muted: false,
-        deafened: false,
-        sharing: false,
-        camera: false,
-        status: 'online',
-        lastChat: 0,
-      };
-      members.set(conn.id, connMember);
-      const allMessages = {};
-      for (const g of state.guilds) {
-        for (const ch of g.channels) {
-          if (ch.type === 'text') allMessages[ch.id] = state.messages[ch.id] || [];
-        }
+    case 'auth': return doAuth(conn, msg);
+    case 'hello': return doAuth(conn, { ...msg, mode: 'guest' });
+
+    case 'friend-add': {
+      if (me.guest) return conn.send({ t: 'notice', message: 'Зарегистрируйтесь, чтобы добавлять друзей' });
+      const login = cleanText(msg.login, 24).toLowerCase();
+      const targetId = state.logins[login];
+      if (!targetId) return conn.send({ t: 'notice', message: `Пользователь «${login}» не найден` });
+      if (targetId === me.id) return conn.send({ t: 'notice', message: 'Нельзя добавить самого себя' });
+      const f = friendship(me.id, targetId);
+      if (f) return conn.send({ t: 'notice', message: f.status === 'accepted' ? 'Вы уже друзья' : 'Запрос уже отправлен' });
+      state.friendships.push({ a: me.id, b: targetId, from: me.id, status: 'pending', ts: Date.now() });
+      saveState();
+      sendToUser(targetId, { t: 'friend-request', from: publicUser(userById(me.id)) });
+      sendFriends(me.id); sendFriends(targetId);
+      return conn.send({ t: 'notice', message: `Запрос отправлен пользователю ${login}` });
+    }
+
+    case 'friend-accept':
+    case 'friend-decline':
+    case 'friend-remove': {
+      if (me.guest) return;
+      const peerId = cleanText(msg.userId, 64);
+      const f = friendship(me.id, peerId);
+      if (!f) return;
+      if (msg.t === 'friend-remove' || msg.t === 'friend-decline') {
+        state.friendships = state.friendships.filter((x) => x !== f);
+      } else {
+        if (f.from === me.id || f.status !== 'pending') return;
+        f.status = 'accepted';
       }
-      conn.send({
-        t: 'welcome',
-        self: publicMember(connMember),
-        guilds: state.guilds,
-        messages: allMessages,
-        members: memberList(),
-        config: {
-          name: CFG.name,
-          version: VERSION,
-          iceServers: iceServers(),
-          maxUpload: MAX_UPLOAD,
-          lan: lanAddresses(),
-          port: CFG.port,
-          installer: publicRelease(installerInfo()),
-          portable: publicRelease(portableInfo()),
-        },
-      });
-      broadcastPresence();
+      saveState();
+      sendFriends(me.id); sendFriends(peerId);
+      conn.send({ t: 'dms', dms: dmListFor(me.id) });
+      sendToUser(peerId, { t: 'dms', dms: dmListFor(peerId) });
+      return;
+    }
+
+    case 'dm-open': {
+      if (me.guest) return conn.send({ t: 'notice', message: 'Зарегистрируйтесь, чтобы писать в личные сообщения' });
+      const peerId = cleanText(msg.userId, 64);
+      if (!state.users[peerId]) return conn.send({ t: 'error', message: 'Пользователь не найден' });
+      const f = friendship(me.id, peerId);
+      if (!f || f.status !== 'accepted') return conn.send({ t: 'notice', message: 'Сначала добавьте пользователя в друзья' });
+      let dm = dmChannelFor(me.id, peerId);
+      if (!dm) {
+        dm = { id: uid('dm-'), participants: [me.id, peerId], messages: [] };
+        state.dms[dm.id] = dm;
+        saveState();
+      }
+      const list = dmListFor(me.id);
+      conn.send({ t: 'dm-opened', channel: list.find((d) => d.id === dm.id), dms: list });
+      sendToUser(peerId, { t: 'dms', dms: dmListFor(peerId) });
+      return;
+    }
+
+    case 'friends-refresh': {
+      if (me.guest) return;
+      sendFriends(me.id);
+      conn.send({ t: 'dms', dms: dmListFor(me.id) });
       return;
     }
 
@@ -414,8 +613,11 @@ function handleMessage(conn, raw) {
       if (t - me.lastChat < 250) return; // анти-спам
       me.lastChat = t;
       const channelId = cleanText(msg.channelId, 64);
-      const channel = state.guilds.flatMap((g) => g.channels).find((c) => c.id === channelId && c.type === 'text');
-      if (!channel) return conn.send({ t: 'error', message: 'Канал не найден' });
+      const guildChannel = state.guilds.flatMap((g) => g.channels).find((c) => c.id === channelId && c.type === 'text');
+      const dm = guildChannel ? null : state.dms[channelId];
+      if (!guildChannel && (!dm || !dm.participants.includes(me.id))) {
+        return conn.send({ t: 'error', message: 'Канал не найден' });
+      }
       const item = {
         id: uid('m-'),
         channelId,
@@ -434,19 +636,30 @@ function handleMessage(conn, raw) {
             }
           : null,
       };
-      const list = state.messages[channelId] || (state.messages[channelId] = []);
+      const list = dm ? dm.messages : (state.messages[channelId] || (state.messages[channelId] = []));
       list.push(item);
       if (list.length > HISTORY_LIMIT) list.splice(0, list.length - HISTORY_LIMIT);
       saveState();
-      wsHub.broadcast({ t: 'chat', message: item });
+      if (dm) {
+        for (const pid of dm.participants) {
+          sendToUser(pid, { t: 'chat', message: item });
+          sendToUser(pid, { t: 'dms', dms: dmListFor(pid) });
+        }
+      } else {
+        wsHub.broadcast({ t: 'chat', message: item });
+      }
       return;
     }
 
     case 'typing': {
-      wsHub.broadcast(
-        { t: 'typing', channelId: cleanText(msg.channelId, 64), userId: me.id, name: me.name },
-        (c) => c.id !== conn.id
-      );
+      const channelId = cleanText(msg.channelId, 64);
+      const dm = state.dms[channelId];
+      const payload = { t: 'typing', channelId, userId: me.id, name: me.name };
+      if (dm) {
+        for (const pid of dm.participants) if (pid !== me.id) sendToUser(pid, payload);
+      } else {
+        wsHub.broadcast(payload, (c) => c.id !== conn.id);
+      }
       return;
     }
 
@@ -508,6 +721,15 @@ function handleMessage(conn, raw) {
       if ('name' in patch) me.name = cleanText(patch.name, 32) || me.name;
       if ('color' in patch && /^#[0-9a-f]{6}$/i.test(patch.color)) me.color = patch.color;
       if ('status' in patch && ['online', 'idle', 'dnd', 'invisible'].includes(patch.status)) me.status = patch.status;
+      if ('game' in patch) me.game = cleanText(patch.game, 60);
+      if (!me.guest) {
+        const u = state.users[me.id];
+        if (u) {
+          if ('name' in patch) { u.name = me.name; u.avatar = initials(me.name); me.avatar = u.avatar; }
+          if ('color' in patch) u.color = me.color;
+          saveState();
+        }
+      }
       broadcastPresence();
       return;
     }
@@ -592,8 +814,10 @@ const requestHandler = (req, res) => {
       maxUpload: MAX_UPLOAD,
       lan: lanAddresses(),
       port: CFG.port,
+      publicUrl: CFG.publicUrl,
       installer: publicRelease(installerInfo()),
       portable: publicRelease(portableInfo()),
+      accounts: true,
     });
   }
   if (pathname.startsWith('/download/')) {

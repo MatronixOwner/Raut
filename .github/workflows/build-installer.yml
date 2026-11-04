@@ -23,10 +23,20 @@ jobs:
         run: python3 scripts/make-icon.py
 
       - name: Сборка RautSetup.exe
+        # Задайте переменную репозитория RAUT_PUBLIC_URL=https://chat.example.ru,
+        # чтобы установщик сразу открывал общий сервер проекта.
+        env:
+          RAUT_PUBLIC_URL: ${{ vars.RAUT_PUBLIC_URL }}
         run: bash scripts/build-installer.sh
 
+      - name: Интеграционные проверки
+        run: |
+          node server/index.js --host 127.0.0.1 --port 8787 &
+          sleep 1
+          node scripts/smoke-test.mjs http://127.0.0.1:8787
+
       - name: Контрольная сумма
-        run: sha256sum release/RautSetup-*.exe
+        run: sha256sum release/RautSetup-*.exe release/Raut-*-portable.zip
 
       - uses: actions/upload-artifact@v4
         with:

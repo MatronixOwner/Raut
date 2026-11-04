@@ -16,32 +16,51 @@
       <div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div>
       <div class="connect-caption">
         <div class="connect-logo"><img src="/assets/logo.png" alt="" /></div>
-        <h1>Связь без границ</h1>
-        <p>Голос студийного качества, экран в 60 FPS и чат — на сервере, который контролируете вы.</p>
+        <h1>Просто общайтесь</h1>
+        <p>Зарегистрировались → добавили друга → созвон, экран и чат. Сервер уже работает: ничего устанавливать и настраивать не нужно.</p>
       </div>
     </div>
     <div class="connect-form">
       <div class="connect-inner">
         <div class="connect-mobile-logo"><img src="/assets/logo.png" alt="Raut" /> <strong>Raut</strong></div>
-        <h2>Подключиться</h2>
-        <p class="muted">Введите имя и адрес вашего сервера Raut.</p>
+        <div class="auth-tabs">
+          <button class="auth-tab active" data-mode="login">Войти</button>
+          <button class="auth-tab" data-mode="register">Регистрация</button>
+        </div>
+        <h2 id="authTitle">С возвращением!</h2>
+        <p class="muted" id="authSubtitle">Введите логин и пароль — друзья и чаты уже ждут вас.</p>
         <label class="field">
-          <span>Отображаемое имя</span>
+          <span>Логин</span>
+          <input id="authLogin" type="text" maxlength="24" autocomplete="username" spellcheck="false" placeholder="например, alex" />
+        </label>
+        <label class="field hidden" id="authNameField">
+          <span>Как вас зовут</span>
           <input id="connectName" type="text" maxlength="32" autocomplete="nickname" placeholder="Например, Алекс" />
         </label>
         <label class="field">
-          <span>Адрес сервера</span>
-          <input id="connectUrl" type="text" spellcheck="false" placeholder="http://127.0.0.1:8787" />
-          <small>Локальный сервер запускается вместе с приложением. Для удалённого доступа используйте https://</small>
+          <span>Пароль</span>
+          <input id="authPassword" type="password" maxlength="128" autocomplete="current-password" placeholder="не менее 6 символов" />
         </label>
-        <label class="field">
+        <label class="field" id="authColorField">
           <span>Цвет профиля</span>
           <div id="colorPicker" class="color-picker"></div>
         </label>
+        <details class="auth-advanced">
+          <summary>Дополнительно: адрес сервера</summary>
+          <label class="field">
+            <span>Адрес сервера</span>
+            <input id="connectUrl" type="text" spellcheck="false" placeholder="https://..." />
+            <small>Оставьте как есть, чтобы использовать сервер Raut. Меняйте только для своего self-hosted сервера.</small>
+          </label>
+        </details>
         <button id="connectBtn" class="btn primary big">Войти <span class="btn-arrow">→</span></button>
+        <div class="auth-links">
+          <button id="swapMode" class="link-btn">Нет аккаунта? Зарегистрироваться</button>
+          <button id="guestBtn" class="link-btn">Войти как гость</button>
+        </div>
         <div id="connectError" class="connect-error hidden"></div>
         <div class="connect-foot">
-          <span class="dot"></span> Соединение напрямую с вашим сервером · без внешних сервисов
+          <span class="dot"></span> Аккаунты, друзья и чаты хранятся на сервере Raut · вход по логину и паролю
         </div>
         <a id="connectDownload" class="download-link hidden" href="#">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 11l5 5 5-5M4 21h16"/></svg>
@@ -74,6 +93,7 @@
       <header class="chat-header" id="chatHeader"></header>
       <div class="content">
         <div class="chat-column">
+          <section id="homeView" class="home-view hidden"></section>
           <section id="stage" class="stage hidden" aria-label="Демонстрация экрана"></section>
           <div class="messages-scroll" id="messagesScroll">
             <div class="channel-intro" id="channelIntro"></div>
@@ -102,6 +122,7 @@
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <div id="tooltip" class="tooltip hidden"></div>
 
+  <script src="/config.js"></script>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

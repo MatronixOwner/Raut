@@ -126,6 +126,48 @@ a:hover { text-decoration: underline; }
 .download-link .dl-text strong { font-size: 13.5px; }
 .download-link .dl-text small { font-size: 11.5px; color: var(--text-muted); }
 .download-link .dl-arrow { font-size: 20px; color: var(--blurple); }
+
+/* Авторизация */
+.auth-tabs { display: flex; gap: 6px; background: var(--bg-deep); padding: 4px; border-radius: 8px; margin-bottom: 22px; }
+.auth-tab { flex: 1; padding: 9px 10px; border-radius: 6px; font-size: 13.5px; font-weight: 700; color: var(--text-muted); transition: background .15s, color .15s; }
+.auth-tab:hover { color: var(--text); }
+.auth-tab.active { background: var(--blurple); color: #fff; }
+.auth-advanced { margin-bottom: 18px; border: 1px solid #41434a; border-radius: 6px; padding: 0 12px; background: rgba(0,0,0,.12); }
+.auth-advanced summary { cursor: pointer; padding: 10px 0; font-size: 12.5px; color: var(--text-muted); font-weight: 600; list-style: none; }
+.auth-advanced summary::-webkit-details-marker { display: none; }
+.auth-advanced summary::before { content: '▸ '; }
+.auth-advanced[open] summary::before { content: '▾ '; }
+.auth-advanced .field { margin-top: 10px; }
+.auth-links { display: flex; justify-content: space-between; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.link-btn { font-size: 12.5px; color: #00a8fc; padding: 2px 0; }
+.link-btn:hover { text-decoration: underline; }
+
+/* Друзья и личные сообщения */
+.home-hero { padding: 26px 22px 10px; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.home-hero h2 { margin: 0; font-size: 21px; font-weight: 800; }
+.home-hero p { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
+.friends-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; padding: 12px 18px 24px; overflow-y: auto; }
+.friend-card { display: flex; align-items: center; gap: 11px; background: #232428; border: 1px solid #1a1b1e; border-radius: 8px; padding: 12px; transition: border-color .15s, transform .12s; }
+.friend-card:hover { border-color: #4a4c53; transform: translateY(-1px); }
+.friend-card .fc-info { flex: 1; min-width: 0; }
+.friend-card .fc-name { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.friend-card .fc-sub { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.friend-card .fc-actions { display: flex; gap: 3px; }
+.friend-card .fc-actions .icon-btn { width: 28px; height: 28px; }
+.friend-card .fc-actions .ic { width: 17px; height: 17px; }
+.request-banner { margin: 12px 18px 0; padding: 12px 14px; background: #2b2d31; border-left: 3px solid var(--blurple); border-radius: 6px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.request-banner .rb-text { flex: 1; min-width: 180px; font-size: 13.5px; }
+.request-banner .rb-actions { display: flex; gap: 6px; }
+.dm-row { display: flex; align-items: center; gap: 8px; }
+.dm-row .dm-status { width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex: none; }
+.dm-row .dm-status.offline { background: #80848e; }
+.home-empty { padding: 40px 20px; text-align: center; color: var(--text-muted); }
+.home-empty .ic { width: 44px; height: 44px; opacity: .5; margin-bottom: 12px; }
+.sidebar-section-title { display: flex; align-items: center; gap: 6px; padding: 14px 8px 4px; color: var(--text-muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.sidebar-section-title .icon-btn { width: 20px; height: 20px; margin-left: auto; }
+.sidebar-section-title .ic { width: 14px; height: 14px; }
+.home-view { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.dm-row .ch-name { margin-left: 2px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); flex: none; }
 
 /* -------------------------------- каркас -------------------------------- */

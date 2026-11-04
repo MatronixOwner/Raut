@@ -6,6 +6,17 @@
 ; =====================================================================
 Unicode true
 
+!ifndef RAUT_PUBLIC_URL
+  !define RAUT_PUBLIC_URL ""
+!endif
+; Если задан адрес центрального сервера, установленное приложение
+; открывает сразу его — пользователь только регистрируется.
+!if "${RAUT_PUBLIC_URL}" != ""
+  !define RAUT_URL_ARG ' --public-url "${RAUT_PUBLIC_URL}"'
+!else
+  !define RAUT_URL_ARG ''
+!endif
+
 !ifndef RAUT_VERSION
   !define RAUT_VERSION "1.0.0"
 !endif
@@ -77,7 +88,7 @@ VIAddVersionKey /LANG=1033 "OriginalFilename" "RautSetup.exe"
 ; Запуск — напрямую node.exe, без WSH/VBS и без скрытых окон.
 ; Такая схема не похожа на троян-загрузчик и не вызывает ложных срабатываний АВ.
 Function LaunchRaut
-  ExecShell "open" "$INSTDIR\bin\node.exe" '"$INSTDIR\app\server\index.js" --client "$INSTDIR\app\client" --data "$INSTDIR\app\data" --host 0.0.0.0 --port 8787 --open'
+  ExecShell "open" "$INSTDIR\bin\node.exe" '"$INSTDIR\app\server\index.js" --client "$INSTDIR\app\client" --data "$INSTDIR\app\data" --host 0.0.0.0 --port 8787 --open${RAUT_URL_ARG}'
 FunctionEnd
 
 ; ------------------------------- Секции -------------------------------
@@ -106,7 +117,7 @@ Section "Ярлыки в меню «Пуск»" SEC_SHORTCUTS
   SectionIn RO
   CreateDirectory "$SMPROGRAMS\Raut"
   ; свёрнутое, но видимое окно — не «скрытый процесс»
-  CreateShortcut "$SMPROGRAMS\Raut\Raut.lnk" "$INSTDIR\bin\node.exe" '"$INSTDIR\app\server\index.js" --client "$INSTDIR\app\client" --data "$INSTDIR\app\data" --host 0.0.0.0 --port 8787 --open' "$INSTDIR\Raut.ico" 0 SW_SHOWMINIMIZED
+  CreateShortcut "$SMPROGRAMS\Raut\Raut.lnk" "$INSTDIR\bin\node.exe" '"$INSTDIR\app\server\index.js" --client "$INSTDIR\app\client" --data "$INSTDIR\app\data" --host 0.0.0.0 --port 8787 --open${RAUT_URL_ARG}' "$INSTDIR\Raut.ico" 0 SW_SHOWMINIMIZED
   ; обычное окно: видны логи и LAN-адреса для друзей
   CreateShortcut "$SMPROGRAMS\Raut\Сервер Raut.lnk" "$INSTDIR\bin\node.exe" '"$INSTDIR\app\server\index.js" --client "$INSTDIR\app\client" --data "$INSTDIR\app\data" --host 0.0.0.0 --port 8787' "$INSTDIR\Raut.ico" 0 SW_SHOWNORMAL
   CreateShortcut "$SMPROGRAMS\Raut\Удалить Raut.lnk" "$INSTDIR\Uninstall.exe" "" "$INSTDIR\Raut.ico" 0
@@ -115,7 +126,7 @@ Section "Ярлыки в меню «Пуск»" SEC_SHORTCUTS
 SectionEnd
 
 Section "Ярлык на рабочем столе" SEC_DESKTOP
-  CreateShortcut "$DESKTOP\Raut.lnk" "$INSTDIR\bin\node.exe" '"$INSTDIR\app\server\index.js" --client "$INSTDIR\app\client" --data "$INSTDIR\app\data" --host 0.0.0.0 --port 8787 --open' "$INSTDIR\Raut.ico" 0 SW_SHOWMINIMIZED
+  CreateShortcut "$DESKTOP\Raut.lnk" "$INSTDIR\bin\node.exe" '"$INSTDIR\app\server\index.js" --client "$INSTDIR\app\client" --data "$INSTDIR\app\data" --host 0.0.0.0 --port 8787 --open${RAUT_URL_ARG}' "$INSTDIR\Raut.ico" 0 SW_SHOWMINIMIZED
 SectionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN

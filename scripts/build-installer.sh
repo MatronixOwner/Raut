@@ -15,9 +15,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CACHE="$ROOT/.cache"
 PAYLOAD="$CACHE/payload"
-RELEASE="$ROOT/release"
+RELEASE="${RAUT_RELEASE_DIR:-$ROOT/release}"
 VERSION="1.0.0"
 NODE_VERSION="22.23.4"
+# Адрес общего сервера Raut. Если задан, установщик открывает его сразу,
+# и пользователю не нужно поднимать свой сервер.
+RAUT_PUBLIC_URL="${RAUT_PUBLIC_URL:-}"
 
 NSIS_URL="${NSIS_URL:-https://api.github.com/repos/electron-userland/electron-builder-binaries/contents/artifacts/nsis/nsis-bundle-3.13.tar.gz}"
 NODE_URL="${NODE_URL:-https://registry.npmjs.org/node-win-x64/-/node-win-x64-${NODE_VERSION}.tgz}"
@@ -82,6 +85,17 @@ cp "$CACHE/node.exe" "$PAYLOAD/bin/node.exe"
 cp "$ROOT/installer/Raut.ico" "$PAYLOAD/Raut.ico"
 cp "$ROOT/installer/README.txt" "$PAYLOAD/README.txt"
 cp "$ROOT/LICENSE" "$PAYLOAD/LICENSE.txt"
+
+# Клиент узнаёт адрес центрального сервера из config.js (можно заменить
+# в уже установленной программе, не пересобирая её).
+python3 - "$PAYLOAD/client/config.js" "$RAUT_PUBLIC_URL" <<'PY'
+import json, sys
+p, url = sys.argv[1], sys.argv[2].rstrip('/')
+text = ("/* Адрес центрального сервера Raut. Генерируется scripts/build-installer.sh. */\n"
+        "window.RAUT_DEFAULT_SERVER = %s;\n" % json.dumps(url, ensure_ascii=False))
+open(p, 'w', encoding='utf-8').write(text)
+print('[raut] config.js: сервер = ' + (url or 'локальный (по умолчанию)'))
+PY
 
 # Прозрачный «состав сборки»: откуда взяты бинарники и их контрольные суммы.
 # Это ответ на ложные срабатывания антивирусов — пользователь может всё проверить.
@@ -153,6 +167,7 @@ log "Компилирую установщик: $(basename "$OUT")"
   "-DRAUT_PAYLOAD=$PAYLOAD" \
   "-DRAUT_OUTFILE=$OUT" \
   "-DRAUT_ICON=$PAYLOAD/Raut.ico" \
+  "-DRAUT_PUBLIC_URL=$RAUT_PUBLIC_URL" \
   "$ROOT/installer/raut.nsi" || die "makensis завершился с ошибкой"
 
 # -------------------------------------------------------------- проверка ---
@@ -176,15 +191,16 @@ PY
 # Альтернатива на случай, когда антивирус блокирует именно NSIS-установщик:
 # обычный ZIP без инсталлятора, без реестра и без скриптов WSH.
 PORTABLE="$RELEASE/Raut-${VERSION}-portable.zip"
-python3 - "$PAYLOAD" "$PORTABLE" "$VERSION" <<'PY'
+python3 - "$PAYLOAD" "$PORTABLE" "$VERSION" "$RAUT_PUBLIC_URL" <<'PY'
 import hashlib, os, sys, zipfile
-payload, out, version = sys.argv[1], sys.argv[2], sys.argv[3]
+payload, out, version, public_url = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4].rstrip('/')
+url_arg = (' --public-url "' + public_url + '"') if public_url else ''
 launcher = (
     '@echo off\r\n'
     'rem Raut portable launcher (no installer, no registry, no WSH)\r\n'
     'cd /d "%~dp0"\r\n'
     'start "Raut Server" /MIN "bin\\node.exe" "app\\server\\index.js" '
-    '--client "app\\client" --data "app\\data" --host 0.0.0.0 --port 8787 --open\r\n'
+    '--client "app\\client" --data "app\\data" --host 0.0.0.0 --port 8787 --open' + url_arg + '\r\n'
 )
 with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
     z.writestr(f'Raut-{version}/Run-Raut.cmd', launcher)
