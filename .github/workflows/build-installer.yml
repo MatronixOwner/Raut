@@ -1,0 +1,37 @@
+name: Build Windows installer
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Проверка синтаксиса
+        run: npm run check
+
+      - name: Сборка иконки
+        run: python3 scripts/make-icon.py
+
+      - name: Сборка RautSetup.exe
+        run: bash scripts/build-installer.sh
+
+      - name: Контрольная сумма
+        run: sha256sum release/RautSetup-*.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RautSetup
+          path: |
+            release/RautSetup-*.exe
+            release/RautSetup-*.exe.sha256
+          if-no-files-found: error

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1e1f22" />
+  <meta name="description" content="Raut — голосовой чат, демонстрация экрана и текстовые каналы на своём сервере" />
+  <title>Raut</title>
+  <link rel="icon" href="/assets/logo.png" type="image/png" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Экран подключения -->
+  <section id="connectScreen" class="connect-screen">
+    <div class="connect-art" aria-hidden="true">
+      <div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div>
+      <div class="connect-caption">
+        <div class="connect-logo"><img src="/assets/logo.png" alt="" /></div>
+        <h1>Связь без границ</h1>
+        <p>Голос студийного качества, экран в 60 FPS и чат — на сервере, который контролируете вы.</p>
+      </div>
+    </div>
+    <div class="connect-form">
+      <div class="connect-inner">
+        <div class="connect-mobile-logo"><img src="/assets/logo.png" alt="Raut" /> <strong>Raut</strong></div>
+        <h2>Подключиться</h2>
+        <p class="muted">Введите имя и адрес вашего сервера Raut.</p>
+        <label class="field">
+          <span>Отображаемое имя</span>
+          <input id="connectName" type="text" maxlength="32" autocomplete="nickname" placeholder="Например, Алекс" />
+        </label>
+        <label class="field">
+          <span>Адрес сервера</span>
+          <input id="connectUrl" type="text" spellcheck="false" placeholder="http://127.0.0.1:8787" />
+          <small>Локальный сервер запускается вместе с приложением. Для удалённого доступа используйте https://</small>
+        </label>
+        <label class="field">
+          <span>Цвет профиля</span>
+          <div id="colorPicker" class="color-picker"></div>
+        </label>
+        <button id="connectBtn" class="btn primary big">Войти <span class="btn-arrow">→</span></button>
+        <div id="connectError" class="connect-error hidden"></div>
+        <div class="connect-foot">
+          <span class="dot"></span> Соединение напрямую с вашим сервером · без внешних сервисов
+        </div>
+        <a id="connectDownload" class="download-link hidden" href="#">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 11l5 5 5-5M4 21h16"/></svg>
+          <span class="dl-text"><strong>Скачать Raut для Windows</strong><small class="dl-size">установщик .exe</small></span>
+          <span class="dl-arrow">↓</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Основной интерфейс -->
+  <div id="shell" class="shell hidden">
+    <div id="netBanner" class="net-banner hidden"></div>
+
+    <nav class="guild-rail" id="guildRail" aria-label="Серверы"></nav>
+
+    <aside class="sidebar">
+      <header class="guild-header" id="guildHeader"></header>
+      <div class="channel-scroll" id="channelList"></div>
+      <div id="voicePanel" class="voice-panel hidden"></div>
+      <div class="user-panel" id="userPanel"></div>
+    </aside>
+
+    <main class="main">
+      <header class="chat-header" id="chatHeader"></header>
+      <div class="content">
+        <div class="chat-column">
+          <section id="stage" class="stage hidden" aria-label="Демонстрация экрана"></section>
+          <div class="messages-scroll" id="messagesScroll">
+            <div class="channel-intro" id="channelIntro"></div>
+            <div id="messages" class="messages"></div>
+          </div>
+          <div class="typing-row" id="typingRow"></div>
+          <div class="composer-wrap">
+            <div id="replyPreview" class="reply-preview hidden"></div>
+            <form id="composer" class="composer" autocomplete="off">
+              <button type="button" class="icon-btn attach-btn" id="attachBtn" title="Прикрепить файл"></button>
+              <input id="messageInput" type="text" maxlength="2000" placeholder="Написать сообщение" />
+              <button type="button" class="icon-btn emoji-btn" id="emojiBtn" title="Эмодзи"></button>
+              <button type="submit" class="icon-btn send-btn" title="Отправить"></button>
+            </form>
+            <input type="file" id="fileInput" class="hidden" />
+            <div id="emojiPicker" class="emoji-picker hidden"></div>
+          </div>
+        </div>
+        <aside class="member-list" id="memberList" aria-label="Участники"></aside>
+      </div>
+    </main>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div id="popoutRoot"></div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="tooltip" class="tooltip hidden"></div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

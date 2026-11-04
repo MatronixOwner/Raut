@@ -1,0 +1,17 @@
+{
+  "name": "raut",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Raut — автономный аналог Discord: голос, демонстрация экрана и чат на своём сервере",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js --host 0.0.0.0 --port 8787",
+    "check": "node --check server/index.js && node --check server/ws.js && node --check client/app.js && node --check client/rtc.js && node --check client/net.js",
+    "build:exe": "bash scripts/build-installer.sh",
+    "icon": "python3 scripts/make-icon.py"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
