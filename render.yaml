@@ -1,0 +1,22 @@
+# Render Blueprint: бесплатный общий сервер Raut без карты и без домена.
+# Dashboard → New → Blueprint → выбрать этот репозиторий → Deploy.
+# Адрес будет вида https://raut-xxxx.onrender.com — его можно сразу
+# отправить другу и/или вписать в SERVER_URL.txt.
+services:
+  - type: web
+    name: raut
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    region: frankfurt
+    healthCheckPath: /api/health
+    envVars:
+      - key: RAUT_DATA_DIR
+        value: /app/data
+      - key: RAUT_NAME
+        value: "Raut — общий сервер"
+      - key: RAUT_DEMO
+        value: "1"
+      - key: RAUT_DISCOVERY_URL
+        value: https://api.github.com/repos/MatronixOwner/Raut/contents/SERVER_URL.txt?ref=arena/d55d4f5c-raut

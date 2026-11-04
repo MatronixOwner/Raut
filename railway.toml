@@ -1,0 +1,10 @@
+# Railway: $5 кредита на 30 дней, далее $1/мес бесплатно, карта не нужна.
+# New Project → Deploy from GitHub repo → добавить Volume на /app/data.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+restartPolicyType = "always"

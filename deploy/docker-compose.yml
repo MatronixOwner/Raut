@@ -1,0 +1,52 @@
+# Центральный сервер Raut: приложение + HTTPS-прокси + свой TURN.
+# Запуск:  sudo bash one-shot.sh chat.example.ru   (всё остальное делается само)
+# Подробности: deploy/README.md
+services:
+  raut:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      RAUT_HOST: 0.0.0.0
+      RAUT_PORT: "8787"
+      RAUT_DATA_DIR: /data
+      RAUT_PUBLIC_URL: "https://${DOMAIN_HOST:-chat.example.ru}"
+      RAUT_NAME: "Raut — общий сервер"
+      RAUT_DEMO: "${RAUT_DEMO:-1}"
+      # Свой STUN/TURN на том же VPS. Без зарубежных сервисов.
+      RAUT_STUN: "stun:${DOMAIN_HOST:-chat.example.ru}:3478"
+      RAUT_TURN_URL: "turn:${DOMAIN_HOST:-chat.example.ru}:3478?transport=udp,turn:${DOMAIN_HOST:-chat.example.ru}:3478?transport=tcp"
+      RAUT_TURN_USER: "raut"
+      RAUT_TURN_PASS: "${TURN_PASSWORD:-CHANGE_ME_strong_password}"
+    volumes:
+      - raut-data:/data
+    expose:
+      - "8787"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - raut
+
+  coturn:
+    image: coturn/coturn:4.6.2
+    restart: unless-stopped
+    network_mode: host
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+
+volumes:
+  raut-data:
+  caddy-data:
+  caddy-config:

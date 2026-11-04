@@ -1,0 +1,13 @@
+{
+  "name": "Raut — общий сервер",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "forwardPorts": [8787],
+  "portsAttributes": {
+    "8787": {
+      "label": "Raut",
+      "onAutoForward": "notify"
+    }
+  },
+  "postStartCommand": "bash -c 'mkdir -p /tmp/raut-data; nohup env RAUT_DEMO=1 RAUT_NAME=\"Raut — общий сервер\" node server/index.js --host 0.0.0.0 --port 8787 --data /tmp/raut-data --client client > /tmp/raut-codespace.log 2>&1 &'",
+  "remoteUser": "node"
+}

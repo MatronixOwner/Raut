@@ -1,0 +1,49 @@
+name: Build Windows installer
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Проверка синтаксиса
+        run: npm run check
+
+      - name: Сборка иконки
+        run: python3 scripts/make-icon.py
+
+      - name: Сборка RautSetup.exe
+        # Задайте переменную репозитория RAUT_PUBLIC_URL=https://chat.example.ru,
+        # чтобы установщик сразу открывал общий сервер проекта.
+        env:
+          RAUT_PUBLIC_URL: ${{ vars.RAUT_PUBLIC_URL }}
+        run: bash scripts/build-installer.sh
+
+      - name: Интеграционные проверки
+        run: |
+          node server/index.js --host 127.0.0.1 --port 8787 &
+          sleep 1
+          node scripts/smoke-test.mjs http://127.0.0.1:8787
+
+      - name: Контрольная сумма
+        run: sha256sum release/RautSetup-*.exe release/Raut-*-portable.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RautSetup
+          path: |
+            release/RautSetup-*.exe
+            release/RautSetup-*.exe.sha256
+            release/Raut-*-portable.zip
+            release/Raut-*-portable.zip.sha256
+          if-no-files-found: error

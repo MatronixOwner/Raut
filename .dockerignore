@@ -1,0 +1,16 @@
+.git
+.github
+.cache
+release
+data
+node_modules
+deploy/*
+!deploy/entrypoint.sh
+*.md
+!README.md
+scripts
+installer
+assets
+render.yaml
+railway.toml
+SERVER_URL.txt

@@ -1,0 +1,41 @@
+# systemd-юнит для запуска центрального сервера Raut без Docker.
+# Скопируйте в /etc/systemd/system/raut.service, отредактируйте Environment=,
+# затем: systemctl daemon-reload && systemctl enable --now raut
+[Unit]
+Description=Raut — центральный сервер чата, друзей и WebRTC-сигналинга
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=raut
+Group=raut
+WorkingDirectory=/opt/raut
+ExecStart=/usr/bin/node /opt/raut/server/index.js \
+  --host 0.0.0.0 --port 8787 --data /var/lib/raut --client /opt/raut/client
+Restart=always
+RestartSec=3
+
+# ПУБЛИЧНЫЙ АДРЕС — замените на свой домен
+Environment=RAUT_PUBLIC_URL=https://chat.example.ru
+Environment=RAUT_NAME=Raut — общий сервер
+
+# СВОЙ STUN/TURN — замените пароль на тот, что в turnserver.conf
+Environment=RAUT_STUN=stun:chat.example.ru:3478
+Environment=RAUT_TURN_URL=turn:chat.example.ru:3478?transport=udp,turn:chat.example.ru:3478?transport=tcp
+Environment=RAUT_TURN_USER=raut
+Environment=RAUT_TURN_PASS=CHANGE_ME_strong_password
+
+# Прямой HTTPS без nginx/Caddy (обычно НЕ нужен — TLS терминирует прокси)
+# Environment=RAUT_TLS_CERT=/etc/ssl/raut.crt
+# Environment=RAUT_TLS_KEY=/etc/ssl/raut.key
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/raut
+ProtectHome=true
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

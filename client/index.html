@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1e1f22" />
+  <meta name="description" content="Raut — друзья, чат, голос и демонстрация экрана. Скачали и общаетесь." />
+  <title>Raut</title>
+  <link rel="icon" href="/assets/logo.png?v=2" type="image/png" />
+  <link rel="apple-touch-icon" href="/assets/logo.png?v=2" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Raut" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Экран подключения -->
+  <section id="connectScreen" class="connect-screen">
+    <div class="connect-art" aria-hidden="true">
+      <div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div>
+      <div class="connect-caption">
+        <div class="connect-logo"><img src="/assets/logo.png?v=2" alt="" /></div>
+        <h1>Просто общайтесь</h1>
+        <p>Скачали → зашли → добавили друга → общаетесь, созваниваетесь и играете. Ничего настраивать не нужно.</p>
+      </div>
+    </div>
+    <div class="connect-form">
+      <div class="connect-inner">
+        <div class="connect-mobile-logo"><img src="/assets/logo.png?v=2" alt="Raut" /> <strong>Raut</strong></div>
+        <div class="auth-tabs">
+          <button class="auth-tab active" data-mode="login">Войти</button>
+          <button class="auth-tab" data-mode="register">Регистрация</button>
+        </div>
+        <h2 id="authTitle">С возвращением!</h2>
+        <p class="muted" id="authSubtitle">Введите логин и пароль — друзья и чаты уже ждут вас.</p>
+        <label class="field">
+          <span>Логин</span>
+          <input id="authLogin" type="text" maxlength="24" autocomplete="username" spellcheck="false" placeholder="например, alex" />
+        </label>
+        <label class="field hidden" id="authNameField">
+          <span>Как вас зовут</span>
+          <input id="connectName" type="text" maxlength="32" autocomplete="nickname" placeholder="Например, Алекс" />
+        </label>
+        <label class="field">
+          <span>Пароль</span>
+          <input id="authPassword" type="password" maxlength="128" autocomplete="current-password" placeholder="не менее 6 символов" />
+        </label>
+        <label class="field" id="authColorField">
+          <span>Цвет профиля</span>
+          <div id="colorPicker" class="color-picker"></div>
+        </label>
+        <input id="connectUrl" type="hidden" value="" />
+        <button id="connectBtn" class="btn primary big">Войти <span class="btn-arrow">→</span></button>
+        <div class="auth-links">
+          <button id="swapMode" class="link-btn">Нет аккаунта? Зарегистрироваться</button>
+          <button id="guestBtn" class="link-btn">Войти как гость</button>
+        </div>
+        <div id="connectError" class="connect-error hidden"></div>
+        <div class="connect-foot">
+          <span class="dot"></span> Друзья, чаты и звонки в одном месте · без настроек и без своего сервера
+        </div>
+        <a id="connectDownload" class="download-link hidden" href="#">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 11l5 5 5-5M4 21h16"/></svg>
+          <span class="dl-text"><strong>Скачать Raut для Windows</strong><small class="dl-size">установщик .exe</small></span>
+          <span class="dl-arrow">↓</span>
+        </a>
+        <a id="connectPortable" class="download-link hidden" href="#">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M12 18v-6M9 15l3 3 3-3"/></svg>
+          <span class="dl-text"><strong>Портативная версия (ZIP)</strong><small class="dl-size">без установщика — если антивирус блокирует .exe</small></span>
+          <span class="dl-arrow">↓</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Основной интерфейс -->
+  <div id="shell" class="shell hidden">
+    <div id="netBanner" class="net-banner hidden"></div>
+
+    <nav class="guild-rail" id="guildRail" aria-label="Серверы"></nav>
+
+    <aside class="sidebar">
+      <header class="guild-header" id="guildHeader"></header>
+      <div class="channel-scroll" id="channelList"></div>
+      <div id="voicePanel" class="voice-panel hidden"></div>
+      <div class="user-panel" id="userPanel"></div>
+    </aside>
+
+    <main class="main">
+      <header class="chat-header" id="chatHeader"></header>
+      <div class="content">
+        <div class="chat-column">
+          <section id="homeView" class="home-view hidden"></section>
+          <section id="stage" class="stage hidden" aria-label="Демонстрация экрана"></section>
+          <div class="messages-scroll" id="messagesScroll">
+            <div class="channel-intro" id="channelIntro"></div>
+            <div id="messages" class="messages"></div>
+          </div>
+          <div class="typing-row" id="typingRow"></div>
+          <div class="composer-wrap">
+            <div id="replyPreview" class="reply-preview hidden"></div>
+            <form id="composer" class="composer" autocomplete="off">
+              <button type="button" class="icon-btn attach-btn" id="attachBtn" title="Прикрепить файл"></button>
+              <input id="messageInput" type="text" maxlength="2000" placeholder="Написать сообщение" />
+              <button type="button" class="icon-btn emoji-btn" id="emojiBtn" title="Эмодзи"></button>
+              <button type="submit" class="icon-btn send-btn" title="Отправить"></button>
+            </form>
+            <input type="file" id="fileInput" class="hidden" />
+            <div id="emojiPicker" class="emoji-picker hidden"></div>
+          </div>
+        </div>
+        <aside class="member-list" id="memberList" aria-label="Участники"></aside>
+      </div>
+    </main>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div id="popoutRoot"></div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="tooltip" class="tooltip hidden"></div>
+
+  <script src="/config.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

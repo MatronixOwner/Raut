@@ -1,0 +1,13 @@
+# Кеш инструментов сборки (NSIS ~6 МБ, node.exe ~87 МБ) и промежуточные файлы
+.cache/
+*.log
+
+# Данные, создаваемые сервером при запуске
+/data/
+/profile/
+/app/data/
+
+# Прочее
+node_modules/
+.DS_Store
+Thumbs.db
