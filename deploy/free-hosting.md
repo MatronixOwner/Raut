@@ -51,6 +51,8 @@ sudo bash deploy/one-shot.sh
 
 ## Рекомендация №2 — Northflank Sandbox (бесплатно всегда, не засыпает)
 
+**Пошаговая инструкция: [northflank.md](northflank.md).**
+
 Два сервиса, одна БД, always-on без cold start, WebSocket, HTTPS-поддомен,
 постоянные тома. Карта нужна только для верификации (российская может не пройти).
 UDP для TURN всё равно нет.

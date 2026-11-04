@@ -12,6 +12,8 @@ ENV RAUT_HOST=0.0.0.0 \
     RAUT_DATA_DIR=/data \
     NODE_ENV=production
 
+# Northflank/Render/Railway определяют порт из EXPOSE; entrypoint.sh
+# дополнительно читает $PORT, если платформа его выставляет.
 VOLUME ["/data"]
 EXPOSE 8787
 
