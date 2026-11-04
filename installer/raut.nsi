@@ -50,14 +50,15 @@ VIAddVersionKey /LANG=1033 "OriginalFilename" "RautSetup.exe"
 !define MUI_DIRECTORYPAGE_TEXT_TOP "Папка установки. По умолчанию — профиль текущего пользователя."
 !define MUI_COMPONENTSPAGE_SMALLDESC
 !define MUI_FINISHPAGE_TITLE "Raut установлен"
-!define MUI_FINISHPAGE_TEXT "Готово! При первом запуске введите имя — локальный сервер поднимется автоматически.$\r$\n$\r$\nЧтобы позвать друзей из локальной сети, запустите ярлык «Сервер Raut»: он покажет ваш LAN-адрес."
-!define MUI_FINISHPAGE_RUN "$SYSDIR\wscript.exe"
+!define MUI_FINISHPAGE_TEXT "Готово! При первом запуске введите имя — локальный сервер поднимется автоматически.$\r$\n$\r$\nЯрлык «Сервер Raut» открывает консоль с LAN-адресами для друзей; состав сборки и контрольные суммы — в BUILDINFO.txt."
+!define MUI_FINISHPAGE_RUN "$INSTDIR\bin\node.exe"
 !define MUI_FINISHPAGE_RUN_FUNCTION LaunchRaut
 !define MUI_FINISHPAGE_RUN_TEXT "Запустить Raut"
 !define MUI_FINISHPAGE_LINK "Открыть краткую инструкцию"
 !define MUI_FINISHPAGE_LINK_LOCATION "$INSTDIR\README.txt"
 !define MUI_FINISHPAGE_NOREBOOTSUPPORT
 
+!include "WinMessages.nsh"
 !include "MUI2.nsh"
 
 !insertmacro MUI_PAGE_WELCOME
@@ -73,8 +74,10 @@ VIAddVersionKey /LANG=1033 "OriginalFilename" "RautSetup.exe"
 !insertmacro MUI_LANGUAGE "Russian"
 !insertmacro MUI_LANGUAGE "English"
 
+; Запуск — напрямую node.exe, без WSH/VBS и без скрытых окон.
+; Такая схема не похожа на троян-загрузчик и не вызывает ложных срабатываний АВ.
 Function LaunchRaut
-  ExecShell "open" "$SYSDIR\wscript.exe" '"$INSTDIR\Raut.vbs"'
+  ExecShell "open" "$INSTDIR\bin\node.exe" '"$INSTDIR\app\server\index.js" --client "$INSTDIR\app\client" --data "$INSTDIR\app\data" --host 0.0.0.0 --port 8787 --open'
 FunctionEnd
 
 ; ------------------------------- Секции -------------------------------
@@ -83,10 +86,10 @@ Section "Клиент Raut" SEC_CORE
   SetOutPath "$INSTDIR\app\client"
   File /r "${RAUT_PAYLOAD}\client\*.*"
   SetOutPath "$INSTDIR"
-  File "${RAUT_PAYLOAD}\Raut.vbs"
   File "${RAUT_PAYLOAD}\Raut.ico"
   File "${RAUT_PAYLOAD}\README.txt"
   File "${RAUT_PAYLOAD}\LICENSE.txt"
+  File "${RAUT_PAYLOAD}\BUILDINFO.txt"
   WriteRegStr HKCU "Software\Raut" "InstallDir" "$INSTDIR"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 SectionEnd
@@ -97,21 +100,22 @@ Section "Локальный сервер (Node.js)" SEC_SERVER
   SetOutPath "$INSTDIR\app\server"
   File "${RAUT_PAYLOAD}\server\index.js"
   File "${RAUT_PAYLOAD}\server\ws.js"
-  SetOutPath "$INSTDIR"
-  File "${RAUT_PAYLOAD}\RautServer.vbs"
 SectionEnd
 
 Section "Ярлыки в меню «Пуск»" SEC_SHORTCUTS
   SectionIn RO
   CreateDirectory "$SMPROGRAMS\Raut"
-  CreateShortcut "$SMPROGRAMS\Raut\Raut.lnk" "$SYSDIR\wscript.exe" '"$INSTDIR\Raut.vbs"' "$INSTDIR\Raut.ico" 0
-  CreateShortcut "$SMPROGRAMS\Raut\Сервер Raut.lnk" "$SYSDIR\wscript.exe" '"$INSTDIR\RautServer.vbs"' "$INSTDIR\Raut.ico" 0
+  ; свёрнутое, но видимое окно — не «скрытый процесс»
+  CreateShortcut "$SMPROGRAMS\Raut\Raut.lnk" "$INSTDIR\bin\node.exe" '"$INSTDIR\app\server\index.js" --client "$INSTDIR\app\client" --data "$INSTDIR\app\data" --host 0.0.0.0 --port 8787 --open' "$INSTDIR\Raut.ico" 0 SW_SHOWMINIMIZED
+  ; обычное окно: видны логи и LAN-адреса для друзей
+  CreateShortcut "$SMPROGRAMS\Raut\Сервер Raut.lnk" "$INSTDIR\bin\node.exe" '"$INSTDIR\app\server\index.js" --client "$INSTDIR\app\client" --data "$INSTDIR\app\data" --host 0.0.0.0 --port 8787' "$INSTDIR\Raut.ico" 0 SW_SHOWNORMAL
   CreateShortcut "$SMPROGRAMS\Raut\Удалить Raut.lnk" "$INSTDIR\Uninstall.exe" "" "$INSTDIR\Raut.ico" 0
   CreateShortcut "$SMPROGRAMS\Raut\Инструкция.lnk" "$INSTDIR\README.txt"
+  CreateShortcut "$SMPROGRAMS\Raut\Состав сборки.lnk" "$INSTDIR\BUILDINFO.txt"
 SectionEnd
 
 Section "Ярлык на рабочем столе" SEC_DESKTOP
-  CreateShortcut "$DESKTOP\Raut.lnk" "$SYSDIR\wscript.exe" '"$INSTDIR\Raut.vbs"' "$INSTDIR\Raut.ico" 0
+  CreateShortcut "$DESKTOP\Raut.lnk" "$INSTDIR\bin\node.exe" '"$INSTDIR\app\server\index.js" --client "$INSTDIR\app\client" --data "$INSTDIR\app\data" --host 0.0.0.0 --port 8787 --open' "$INSTDIR\Raut.ico" 0 SW_SHOWMINIMIZED
 SectionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
@@ -143,6 +147,7 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\Raut\Сервер Raut.lnk"
   Delete "$SMPROGRAMS\Raut\Удалить Raut.lnk"
   Delete "$SMPROGRAMS\Raut\Инструкция.lnk"
+  Delete "$SMPROGRAMS\Raut\Состав сборки.lnk"
   RMDir "$SMPROGRAMS\Raut"
   Delete "$DESKTOP\Raut.lnk"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Raut"

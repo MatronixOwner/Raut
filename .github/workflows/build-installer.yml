@@ -34,4 +34,6 @@ jobs:
           path: |
             release/RautSetup-*.exe
             release/RautSetup-*.exe.sha256
+            release/Raut-*-portable.zip
+            release/Raut-*-portable.zip.sha256
           if-no-files-found: error

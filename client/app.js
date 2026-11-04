@@ -364,15 +364,30 @@ function renderAll() {
 }
 
 function renderDownloadLinks() {
-  const link = byId('connectDownload');
-  if (!link) return;
-  const info = S.config.installer;
-  if (!info) { link.classList.add('hidden'); return; }
-  link.href = info.url;
-  link.setAttribute('download', info.name);
-  const size = $('.dl-size', link);
-  if (size) size.textContent = `${(info.size / 1048576).toFixed(1)} МБ · настоящий установщик .exe`;
-  link.classList.remove('hidden');
+  const exe = byId('connectDownload');
+  const zip = byId('connectPortable');
+  if (exe) {
+    const info = S.config.installer;
+    if (!info) exe.classList.add('hidden');
+    else {
+      exe.href = info.url;
+      exe.setAttribute('download', info.name);
+      const size = $('.dl-size', exe);
+      if (size) size.textContent = `${(info.size / 1048576).toFixed(1)} МБ · установщик .exe`;
+      exe.classList.remove('hidden');
+    }
+  }
+  if (zip) {
+    const info = S.config.portable;
+    if (!info) zip.classList.add('hidden');
+    else {
+      zip.href = info.url;
+      zip.setAttribute('download', info.name);
+      const size = $('.dl-size', zip);
+      if (size) size.textContent = `${(info.size / 1048576).toFixed(1)} МБ · без установщика`;
+      zip.classList.remove('hidden');
+    }
+  }
 }
 
 function renderNetBanner(state, extra = {}) {
@@ -708,7 +723,11 @@ function settingsTab(tab) {
       <a class="download-link" href="${esc(S.config.installer.url)}" download="${esc(S.config.installer.name)}">
         ${icon('download')}<span class="dl-text"><strong>Скачать ${esc(S.config.installer.name)}</strong>
         <small>${(S.config.installer.size / 1048576).toFixed(1)} МБ · Windows 10/11 x64</small></span><span class="dl-arrow">↓</span></a>
-      ${S.config.installer.sha ? `<div class="kv"><span>SHA-256</span><code>${esc(S.config.installer.sha.slice(0, 24))}…</code></div>` : ''}` : ''}
+      ${S.config.installer.sha ? `<div class="kv"><span>SHA-256</span><code>${esc(S.config.installer.sha.slice(0, 24))}…</code></div>` : ''}
+      ${S.config.portable ? `<a class="download-link" href="${esc(S.config.portable.url)}" download="${esc(S.config.portable.name)}">
+        ${icon('download')}<span class="dl-text"><strong>Портативная версия (ZIP)</strong>
+        <small>${(S.config.portable.size / 1048576).toFixed(1)} МБ · без установщика, если АВ блокирует .exe</small></span><span class="dl-arrow">↓</span></a>` : ''}
+      <div class="hint" style="font-size:12px">Антивирус ругается? Установщик не подписан и упакован NSIS/LZMA — это частая причина ложных срабатываний. Сверьте SHA-256 через <code>Get-FileHash</code>, проверьте на VirusTotal или скачайте портативный ZIP. В сборке нет VBS/WSH и скрытых окон.</div>` : ''}
     <div class="modal-actions"><button class="btn ghost" id="restartVoice">${icon('refresh')} Переподключить голос</button></div>`;
   return '';
 }
@@ -1044,6 +1063,7 @@ function boot() {
   bindUI();
   fetch('/api/config').then((r) => r.json()).then((cfg) => {
     S.config.installer = cfg.installer || null;
+    S.config.portable = cfg.portable || null;
     renderDownloadLinks();
   }).catch(() => {});
   if (S.settings.name) startSession();

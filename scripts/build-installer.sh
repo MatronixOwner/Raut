@@ -83,16 +83,60 @@ cp "$ROOT/installer/Raut.ico" "$PAYLOAD/Raut.ico"
 cp "$ROOT/installer/README.txt" "$PAYLOAD/README.txt"
 cp "$ROOT/LICENSE" "$PAYLOAD/LICENSE.txt"
 
-# WSH понимает .vbs в ANSI или UTF-16LE с BOM — перекодируем, иначе русский
-# текст в MsgBox отобразится крокозябрами на Windows с CP1251.
-python3 - "$ROOT/installer" "$PAYLOAD" <<'PY'
-import os, sys
-src, dst = sys.argv[1], sys.argv[2]
-for name in ('Raut.vbs', 'RautServer.vbs'):
-    text = open(os.path.join(src, name), 'r', encoding='utf-8').read()
-    with open(os.path.join(dst, name), 'wb') as f:
-        f.write(b'\xff\xfe' + text.encode('utf-16-le'))
-    print('[raut] %s -> UTF-16LE' % name)
+# Прозрачный «состав сборки»: откуда взяты бинарники и их контрольные суммы.
+# Это ответ на ложные срабатывания антивирусов — пользователь может всё проверить.
+python3 - "$PAYLOAD" "$CACHE/node.exe" "$VERSION" "$NODE_VERSION" <<'PY'
+import hashlib, os, sys
+payload, node, version, node_version = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+def sha(p):
+    h = hashlib.sha256()
+    with open(p, 'rb') as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b''):
+            h.update(chunk)
+    return h.hexdigest()
+text = f"""RAUT {version} — СОСТАВ СБОРКИ И ПРОВЕРКА ПОДЛИННОСТИ
+======================================================
+
+В установщике НЕТ скриптов WSH/VBS, скрытых окон, автозапуска
+и загрузчиков. Запуск идёт напрямую через bin\\node.exe с параметром
+--open, а окно приложения открывает сам сервер через child_process.
+
+СОСТАВ
+  app/client/   веб-клиент (HTML/CSS/JS, исходники в репозитории)
+  app/server/   сервер сигналинга и чата (index.js, ws.js)
+  bin/node.exe  Node.js {node_version} для Windows x64
+  Raut.ico      иконка, сгенерированная scripts/make-icon.py
+  README.txt    краткая инструкция
+  LICENSE.txt   MIT
+
+ОТКУДА БИНАРНИКИ
+  node.exe : npm-пакет node-win-x64@22.23.4 (registry.npmjs.org),
+             официальная сборка Node.js, лицензия MIT.
+  установщик собран NSIS 3.13 (Linux-makensis + стабы x86-unicode)
+             из electron-builder-binaries, сжатие LZMA.
+
+КОНТРОЛЬНЫЕ СУММЫ
+  node.exe SHA-256 : {sha(node)}
+  установщик SHA-256 : см. файл RautSetup-{version}.exe.sha256
+                       рядом с установщиком на сервере/GitHub.
+
+ПРОВЕРИТЬ САМОСТОЯТЕЛЬНО (PowerShell)
+  Get-FileHash .\\RautSetup-{version}.exe -Algorithm SHA256
+  Get-FileHash .\\bin\\node.exe -Algorithm SHA256
+
+ПЕРЕСОБРАТЬ ИЗ ИСХОДНИКОВ
+  git clone https://github.com/MatronixOwner/Raut
+  bash scripts/build-installer.sh
+
+ЕСЛИ АНТИВИРУС РУГАЕТСЯ
+  Установщик не подписан (нет Code Signing сертификата) — это частая
+  причина срабатывания эвристик SmartScreen/Defender на любых NSIS-сборках.
+  Проверьте хэш, проверьте файл на virustotal.com, при необходимости
+  добавьте в исключения или используйте портативный ZIP-архив.
+"""
+with open(os.path.join(payload, 'BUILDINFO.txt'), 'w', encoding='utf-8') as f:
+    f.write(text)
+print('[raut] BUILDINFO.txt: SHA-256 node.exe = ' + sha(node)[:16] + '…')
 PY
 
 # Синтаксическая проверка всего JS, который попадёт в установщик.
@@ -128,5 +172,35 @@ print('[raut] SHA256: ' + h)
 open(p + '.sha256', 'w').write(h + '  ' + os.path.basename(p) + '\n')
 PY
 
+# --------------------------------------------------- портативная версия ---
+# Альтернатива на случай, когда антивирус блокирует именно NSIS-установщик:
+# обычный ZIP без инсталлятора, без реестра и без скриптов WSH.
+PORTABLE="$RELEASE/Raut-${VERSION}-portable.zip"
+python3 - "$PAYLOAD" "$PORTABLE" "$VERSION" <<'PY'
+import hashlib, os, sys, zipfile
+payload, out, version = sys.argv[1], sys.argv[2], sys.argv[3]
+launcher = (
+    '@echo off\r\n'
+    'rem Raut portable launcher (no installer, no registry, no WSH)\r\n'
+    'cd /d "%~dp0"\r\n'
+    'start "Raut Server" /MIN "bin\\node.exe" "app\\server\\index.js" '
+    '--client "app\\client" --data "app\\data" --host 0.0.0.0 --port 8787 --open\r\n'
+)
+with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+    z.writestr(f'Raut-{version}/Run-Raut.cmd', launcher)
+    for base, _, files in os.walk(payload):
+        for name in files:
+            full = os.path.join(base, name)
+            rel = os.path.relpath(full, payload).replace(os.sep, '/')
+            # Внутри установки и архива клиент/сервер лежат в app/
+            if rel.startswith('client/') or rel.startswith('server/'):
+                rel = 'app/' + rel
+            z.write(full, f'Raut-{version}/{rel}')
+h = hashlib.sha256(open(out, 'rb').read()).hexdigest()
+open(out + '.sha256', 'w').write(h + '  ' + os.path.basename(out) + '\n')
+print('[raut] portable ZIP: %.1f MB, SHA256 %s…' % (os.path.getsize(out)/1048576, h[:16]))
+PY
+
 log "Готово: $OUT"
 log "Проверка: $(cat "$OUT.sha256")"
+log "Портативная версия: $PORTABLE"

@@ -52,6 +52,11 @@ async function main() {
     ok(buf.length === config.installer.size, 'размер установщика совпадает с /api/config');
     ok(/attachment/.test(dl.headers.get('content-disposition') || ''), 'Content-Disposition: attachment');
   }
+  if (config.portable) {
+    const zip = await fetch(BASE + config.portable.url);
+    const buf = Buffer.from(await zip.arrayBuffer());
+    ok(zip.status === 200 && buf[0] === 0x50 && buf[1] === 0x4b, 'GET /download/Raut-portable.zip (ZIP)');
+  }
 
   const html = await (await fetch(BASE + '/')).text();
   ok(html.includes('connectScreen') && html.includes('/app.js'), 'GET / (клиент)');

@@ -3,7 +3,10 @@
  * Raut Server — HTTP-раздача клиента + сигналинг WebRTC + чат.
  * Зависимостей нет: только стандартные модули Node.js.
  *
- *   node server/index.js --host 0.0.0.0 --port 8787
+ *   node server/index.js --host 0.0.0.0 --port 8787 --open
+ *
+ *   --open   после старта открыть клиент в отдельном окне Edge/Chrome
+ *            (заменяет VBS/WSH-лаунчеры — их часто ложно детектят антивирусы)
  *
  * Переменные окружения:
  *   RAUT_PORT, RAUT_HOST, RAUT_DATA_DIR, RAUT_CLIENT_DIR
@@ -42,6 +45,7 @@ const CFG = {
   turnUser: arg('turn-user', process.env.RAUT_TURN_USER || ''),
   turnPass: arg('turn-pass', process.env.RAUT_TURN_PASS || ''),
   stun: arg('stun', process.env.RAUT_STUN || 'stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302'),
+  open: process.argv.includes('--open') || process.env.RAUT_OPEN === '1',
 };
 
 const UPLOAD_DIR = path.join(CFG.dataDir, 'uploads');
@@ -138,22 +142,67 @@ function iceServers() {
   return list;
 }
 
-/** Информация о собранном .exe, чтобы клиент мог показать кнопку скачивания. */
-function installerInfo() {
+/** Список собранных артефактов, чтобы клиент мог показать кнопки скачивания. */
+function releaseEntry(pattern) {
   try {
     const dir = path.resolve(arg('release', process.env.RAUT_RELEASE_DIR || path.join(ROOT, 'release')));
-    const file = fs.readdirSync(dir).filter((f) => /^RautSetup-.*\.exe$/i.test(f)).sort().pop();
+    const file = fs.readdirSync(dir).filter((f) => pattern.test(f)).sort().pop();
     if (!file) return null;
     const full = path.join(dir, file);
     const shaPath = full + '.sha256';
     return {
       name: file,
+      dir,
+      path: full,
       size: fs.statSync(full).size,
       url: '/download/' + encodeURIComponent(file),
       sha: fs.existsSync(shaPath) ? fs.readFileSync(shaPath, 'utf8').trim().split(/\s+/)[0] : '',
-      path: full,
     };
   } catch (_) { return null; }
+}
+const installerInfo = () => releaseEntry(/^RautSetup-.*\.exe$/i);
+const portableInfo = () => releaseEntry(/^Raut-.*-portable\.zip$/i);
+const publicRelease = (e) => e ? { name: e.name, size: e.size, url: e.url, sha: e.sha } : null;
+
+/**
+ * Открывает клиент в отдельном окне браузера без адресной строки.
+ * Обычный child_process.spawn — без WSH/VBS и без скрытых окон.
+ */
+function openClientWindow() {
+  if (process.platform !== 'win32') return; // в Linux/macOS окно открывает пользователь
+  const { spawn } = require('node:child_process');
+  const url = `${CFG.cert && CFG.key ? 'https' : 'http'}://127.0.0.1:${CFG.port}/`;
+  const pf = process.env.ProgramFiles || 'C:\\Program Files';
+  const pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+  const local = process.env.LOCALAPPDATA || '';
+  const candidates = [
+    path.join(pf86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    path.join(pf, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    path.join(pf, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    path.join(pf86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    local && path.join(local, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+  ].filter(Boolean);
+  const browser = candidates.find((p) => { try { return fs.existsSync(p); } catch (_) { return false; } });
+  const profile = path.join(path.dirname(CFG.dataDir), 'profile');
+  try {
+    if (browser) {
+      const child = spawn(browser, [
+        `--app=${url}`,
+        '--window-size=1440,900',
+        `--user-data-dir=${profile}`,
+        '--no-first-run',
+        '--no-default-browser-check',
+      ], { detached: true, stdio: 'ignore' });
+      child.unref();
+      console.log('[raut] окно приложения: ' + path.basename(browser));
+    } else {
+      const child = spawn('cmd.exe', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' });
+      child.unref();
+      console.log('[raut] Edge/Chrome не найден, открываем браузер по умолчанию');
+    }
+  } catch (err) {
+    console.log('[raut] не удалось открыть окно: ' + err.message + ' — откройте ' + url + ' вручную');
+  }
 }
 
 function lanAddresses() {
@@ -350,7 +399,8 @@ function handleMessage(conn, raw) {
           maxUpload: MAX_UPLOAD,
           lan: lanAddresses(),
           port: CFG.port,
-          installer: (() => { const i = installerInfo(); return i ? { name: i.name, size: i.size, url: i.url, sha: i.sha } : null; })(),
+          installer: publicRelease(installerInfo()),
+          portable: publicRelease(portableInfo()),
         },
       });
       broadcastPresence();
@@ -535,7 +585,6 @@ const requestHandler = (req, res) => {
     return sendJson(res, 200, { ok: true, name: CFG.name, version: VERSION, clients: members.size, uptime: process.uptime() });
   }
   if (pathname === '/api/config') {
-    const inst = installerInfo();
     return sendJson(res, 200, {
       name: CFG.name,
       version: VERSION,
@@ -543,23 +592,26 @@ const requestHandler = (req, res) => {
       maxUpload: MAX_UPLOAD,
       lan: lanAddresses(),
       port: CFG.port,
-      installer: inst ? { name: inst.name, size: inst.size, url: inst.url, sha: inst.sha } : null,
+      installer: publicRelease(installerInfo()),
+      portable: publicRelease(portableInfo()),
     });
   }
   if (pathname.startsWith('/download/')) {
-    const inst = installerInfo();
-    const file = decodeURIComponent(pathname.slice('/download/'.length));
-    if (!inst || file !== inst.name || !inst.path.startsWith(path.dirname(inst.path) + path.sep)) {
-      res.writeHead(404); res.end('Установщик не найден'); return;
+    let file;
+    try { file = path.basename(decodeURIComponent(pathname.slice('/download/'.length))); }
+    catch (_) { res.writeHead(400); res.end(); return; }
+    const entry = [installerInfo(), portableInfo()].find((e) => e && e.name === file);
+    if (!entry || !entry.path.startsWith(entry.dir + path.sep)) {
+      res.writeHead(404); res.end('Файл не найден'); return;
     }
-    const st = fs.statSync(inst.path);
+    const st = fs.statSync(entry.path);
     res.writeHead(200, {
-      'Content-Type': 'application/vnd.microsoft.portable-executable',
+      'Content-Type': /\.zip$/i.test(file) ? 'application/zip' : 'application/vnd.microsoft.portable-executable',
       'Content-Length': st.size,
-      'Content-Disposition': `attachment; filename="${inst.name}"`,
+      'Content-Disposition': `attachment; filename="${file}"`,
       'Cache-Control': 'no-store',
     });
-    return fs.createReadStream(inst.path).pipe(res);
+    return fs.createReadStream(entry.path).pipe(res);
   }
   if (pathname === '/api/upload' && req.method === 'POST') return handleUpload(req, res);
   if (pathname.startsWith('/uploads/')) return serveUpload(req, res, pathname);
@@ -597,8 +649,9 @@ const wsHub = attachWebSocket(server, (conn) => {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    // Лаунчер под Windows запускает сервер при каждом старте клиента — это нормально.
+    // Ярлык запускает сервер при каждом открытии клиента — это нормально.
     console.log(`[raut] порт ${CFG.port} уже занят, считаем сервер запущенным`);
+    if (CFG.open) openClientWindow();
     process.exit(0);
   }
   console.error('[raut] ошибка сервера:', err);
@@ -613,6 +666,7 @@ server.on('error', (err) => {
     console.log(`[raut] ${CFG.name} v${VERSION}: ${proto}://${CFG.host}:${CFG.port}`);
     for (const a of lanAddresses()) console.log(`[raut]   LAN: ${proto}://${a.address}:${CFG.port}`);
     if (!CFG.turnUrl) console.log('[raut] TURN не задан: для связи через интернет укажите RAUT_TURN_URL (см. README)');
+    if (CFG.open) setTimeout(openClientWindow, 350);
   });
 })();
 
