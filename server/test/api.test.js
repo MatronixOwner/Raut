@@ -218,3 +218,34 @@ test('валидация входных данных', async () => {
   const short = await api('POST', '/api/servers', { name: 'x' }, u.token);
   assert.equal(short.status, 400);
 });
+
+test('реакции: поставить, увидеть в истории, снять', async () => {
+  const a = await register('rea');
+  const b = await register('reb');
+  const srv = await api('POST', '/api/servers', { name: 'Реакции' }, a.token);
+  const ch = srv.json.server.channels[0];
+  await api('POST', `/api/servers/${srv.json.server.id}/invites`, {}, a.token).then(async (inv) => {
+    await api('POST', '/api/servers/join', { code: inv.json.code }, b.token);
+  });
+  const key = crypto.randomBytes(32);
+  const payload = await encryptText(new Uint8Array(key), ch.id, 'ставьте лайки');
+  const sent = await api('POST', `/api/channels/${ch.id}/messages`, { payload }, a.token);
+  const msgId = sent.json.message.id;
+
+  const r1 = await api('POST', `/api/channels/${ch.id}/messages/${msgId}/react`, { emoji: '👍' }, b.token);
+  assert.equal(r1.status, 200);
+  assert.deepEqual(r1.json.reactions.map((r) => [r.emoji, r.count]), [['👍', 1]]);
+
+  const hist = await api('GET', `/api/channels/${ch.id}/messages`, null, a.token);
+  const mine = hist.json.messages.find((m) => m.id === msgId);
+  assert.deepEqual(mine.reactions[0].users, [b.user.id]);
+
+  // повторное нажатие снимает реакцию
+  const r2 = await api('POST', `/api/channels/${ch.id}/messages/${msgId}/react`, { emoji: '👍' }, b.token);
+  assert.deepEqual(r2.json.reactions, []);
+
+  // посторонний не может реагировать
+  const c = await register('rec');
+  const r3 = await api('POST', `/api/channels/${ch.id}/messages/${msgId}/react`, { emoji: '🔥' }, c.token);
+  assert.equal(r3.status, 403);
+});

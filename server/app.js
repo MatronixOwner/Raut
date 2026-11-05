@@ -285,6 +285,7 @@ export function createApp({ dataDir = path.resolve(process.cwd(), 'data'), trust
       payload: payload || null,
       attachment: attachment || null,
       system: system || null,
+      reactions: {}, // emoji -> [userId], как в Discord
       createdAt: now(),
     };
     (db.messages[channel.id] ||= []).push(msg);
@@ -747,6 +748,18 @@ export function createApp({ dataDir = path.resolve(process.cwd(), 'data'), trust
     };
   }
 
+  /** Реакции в вид, удобный клиенту: [{ emoji, users: [id...] }] */
+  function reactionsFor(msg) {
+    const map = msg.reactions && typeof msg.reactions === 'object' ? msg.reactions : {};
+    return Object.entries(map)
+      .filter(([, users]) => Array.isArray(users) && users.length)
+      .map(([emoji, users]) => ({ emoji, users: users.slice(0, 200), count: users.length }));
+  }
+
+  function publicMessage(msg) {
+    return { ...msg, reactions: reactionsFor(msg) };
+  }
+
   function json(res, status, body) {
     const data = Buffer.from(JSON.stringify(body), 'utf8');
     res.writeHead(status, {
@@ -1079,6 +1092,33 @@ export function createApp({ dataDir = path.resolve(process.cwd(), 'data'), trust
       }
     }
 
+      // реакция на сообщение: POST /api/channels/:id/messages/:msgId/react { emoji }
+      const reactMatch = pathname.match(/^\/api\/channels\/([A-Za-z0-9_-]+)\/messages\/([A-Za-z0-9_-]+)\/react$/);
+      if (reactMatch && method === 'POST') {
+        const target = db.channels[reactMatch[1]];
+        if (!target) return fail(res, 404, 'канал не найден');
+        if (target.kind === 'dm') {
+          if (!target.members.includes(user.id)) return fail(res, 403, 'это не ваш диалог');
+        } else if (!isMember(db.servers[target.serverId], user.id)) {
+          return fail(res, 403, 'вы не участник сервера');
+        }
+        const emoji = str(body.emoji, 16);
+        if (!emoji) return fail(res, 400, 'нет эмодзи');
+        const msg = (db.messages[target.id] || []).find((m) => m.id === reactMatch[2]);
+        if (!msg) return fail(res, 404, 'сообщение не найдено');
+        msg.reactions ||= {};
+        const users = (msg.reactions[emoji] ||= []);
+        const i = users.indexOf(user.id);
+        if (i >= 0) users.splice(i, 1);
+        else users.push(user.id);
+        if (!users.length) delete msg.reactions[emoji];
+        store.save();
+        const out = { t: 'msg:reactions', channelId: target.id, messageId: msg.id, reactions: reactionsFor(msg) };
+        ws.broadcast(channelRoom(target), out);
+        if (target.kind === 'dm') for (const m of target.members) sendToUser(m, out);
+        return json(res, 200, { reactions: reactionsFor(msg) });
+      }
+
     /* ---- каналы */
     const channelMatch = pathname.match(
       /^\/api\/channels\/([A-Za-z0-9]+)(?:\/(messages|keys|read|typing|call|members))?$/,
@@ -1109,7 +1149,7 @@ export function createApp({ dataDir = path.resolve(process.cwd(), 'data'), trust
             if (u) authors[m.authorId] = publicUser(u);
           }
         }
-        return json(res, 200, { messages: list, authors, hasMore: list.length === limit });
+        return json(res, 200, { messages: list.map(publicMessage), authors, hasMore: list.length === limit });
       }
 
       if (sub === 'messages' && method === 'POST') {
@@ -1125,7 +1165,7 @@ export function createApp({ dataDir = path.resolve(process.cwd(), 'data'), trust
           kind: body.kind === 'file' ? 'file' : 'text',
           attachment: sanitizeAttachment(body.attachment, user.id),
         });
-        const out = { t: 'msg', channelId: channel.id, message };
+        const out = { t: 'msg', channelId: channel.id, message: publicMessage(message) };
         ws.broadcast(channelRoom(channel), out);
         if (channel.kind === 'dm') for (const m of channel.members) sendToUser(m, out);
         return json(res, 200, { message });

@@ -122,6 +122,28 @@ await sleep(5000);
 const bobFiles = await bob.evaluate(() => [...document.querySelectorAll('.attach-file, .attach-img')].map((e) => e.tagName));
 check('получатель скачал и расшифровал файл', bobFiles.length > 0, bobFiles.join(','));
 
+// реакции: Алиса ставит 🔥 на сообщение Боба, Боб должен увидеть её у себя
+// панель действий сообщения появляется по наведению — в headless её проще вызвать из JS
+const opened = await a.evaluate(() => {
+  const btn = document.querySelector('[data-act="react"]:not([data-emoji])');
+  if (!btn) return false;
+  btn.click();
+  return true;
+});
+if (opened) {
+  await sleep(400);
+  const fire = await a.$('.reaction-pick button:nth-child(2)');
+  if (fire) {
+    await fire.click();
+    await sleep(1600);
+  }
+}
+const aReactions = await a.evaluate(() => [...document.querySelectorAll('.reaction')].map((e) => e.textContent.trim()));
+check('реакция поставлена', aReactions.length > 0, aReactions.join(' '));
+await sleep(1800);
+const bReactions = await bob.evaluate(() => [...document.querySelectorAll('.reaction')].map((e) => e.textContent.trim()));
+check('реакция видна собеседнику в реальном времени', bReactions.length > 0, bReactions.join(' '));
+
 for (const page of [a, bob]) {
   if (MOBILE) {
     // на телефоне панель каналов выдвижная

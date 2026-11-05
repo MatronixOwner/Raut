@@ -6,6 +6,7 @@
  *   node server/index.js --port 9000 --data D:\Raut\data
  *   node server/index.js --open                 # открыть браузер после старта
  *   node server/index.js --stop                 # остановить запущенный Raut
+ *   node server/index.js --minimized            # автозапуск: сервер без окна
  *
  * В упакованном Windows-приложении запускается через nodew.exe (скрытая
  * консоль), поэтому журнал дублируется в <данные>/server.log.
@@ -32,7 +33,9 @@ const flag = (name) => argv.includes(name) || process.env[name.replace(/^-+/, ''
 const port = Number(arg('--port', process.env.PORT || 8787));
 const host = arg('--host', process.env.HOST || '0.0.0.0');
 const dataDir = path.resolve(arg('--data', process.env.RAUT_DATA || path.join(__dirname, '..', 'data')));
-const shouldOpen = flag('--open') || flag('-o');
+// --minimized ставит автозапуск из установщика: сервер поднимается, окно не открываем
+const minimized = flag('--minimized') || flag('--hidden');
+const shouldOpen = (flag('--open') || flag('-o')) && !minimized;
 const stopMode = flag('--stop');
 const silent = flag('--no-console');
 

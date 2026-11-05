@@ -439,6 +439,7 @@ export function messagesView(state, channelId, fallbackName) {
     const body = messageBody(m, state, channelId);
     const actions = `
       <div class="msg-actions">
+        <button data-act="react" data-id="${m.id}" title="Реакция">${icon('smile', 'sm')}</button>
         <button data-act="copy-msg" data-id="${m.id}" title="Скопировать текст">${icon('copy', 'sm')}</button>
         ${mine ? `<button data-act="delete-msg" data-id="${m.id}" title="Удалить">${icon('trash', 'sm')}</button>` : ''}
       </div>`;
@@ -448,7 +449,7 @@ export function messagesView(state, channelId, fallbackName) {
           ${actions}
           <div class="msg-row">
             <div class="gutter"><span class="time-hover">${clock(m.createdAt)}</span></div>
-            <div class="content">${body}</div>
+            <div class="content">${body}${reactionsBar(m, state)}</div>
           </div>
         </div>`);
     } else {
@@ -463,7 +464,7 @@ export function messagesView(state, channelId, fallbackName) {
                 ${isOwnerOf(state, m.authorId, channelId) ? `<span class="role">владелец</span>` : ''}
                 <span class="time">${clock(m.createdAt)}</span>
               </div>
-              ${body}
+              ${body}${reactionsBar(m, state)}
             </div>
           </div>
         </div>`);
@@ -487,6 +488,24 @@ function findChannel(state, channelId) {
     if (c) return c;
   }
   return state.dms.find((d) => d.channelId === channelId) ? { id: channelId, kind: 'dm' } : null;
+}
+
+function reactionsBar(m, state) {
+  const list = Array.isArray(m.reactions) ? m.reactions : [];
+  if (!list.length) return '';
+  const me = state.me?.id;
+  return `<div class="reactions">${list
+    .map((r) => {
+      const mine = r.users?.includes(me);
+      const names = (r.users || [])
+        .map((id) => state.authors?.[id]?.displayName || state.memberIndex?.[id]?.displayName || '')
+        .filter(Boolean)
+        .slice(0, 8)
+        .join(', ');
+      return `<button class="reaction ${mine ? 'mine' : ''}" data-act="react" data-id="${m.id}" data-emoji="${escapeAttr(r.emoji)}" title="${escapeAttr(names || 'реакция')}">
+        <span>${escapeHtml(r.emoji)}</span><b>${r.count}</b></button>`;
+    })
+    .join('')}</div>`;
 }
 
 function messageBody(m, state, channelId) {

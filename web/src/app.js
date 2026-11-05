@@ -680,6 +680,9 @@ function bindGlobal() {
       case 'emoji':
         openEmojiPicker(target, (e) => insertAtCursor(id, e));
         break;
+      case 'react':
+        toggleReaction(id, target.dataset.emoji || null, target);
+        break;
       case 'copy-msg':
         copyMessage(id);
         break;
@@ -1250,6 +1253,86 @@ async function deleteMessage(messageId) {
   }
 }
 
+const REACTION_PRESETS = ['👍', '🔥', '❤️', '😂', '🎉', '👀', '✅', '🤔'];
+
+/** Поставить или снять реакцию. emoji === null — открыть выбор. */
+async function toggleReaction(messageId, emoji, anchorEl) {
+  const channelId = S.view.id;
+  if (!emoji) {
+    if (!anchorEl) return;
+    openReactionBar(anchorEl, (picked) => applyReaction(channelId, messageId, picked));
+    return;
+  }
+  applyReaction(channelId, messageId, emoji);
+}
+
+/** Быстрый набор частых реакций — как панель над сообщением в Discord. */
+function openReactionBar(anchorEl, onPick) {
+  document.querySelector('.reaction-pick')?.remove();
+  const bar = document.createElement('div');
+  bar.className = 'reaction-pick';
+  for (const emoji of REACTION_PRESETS) {
+    const b = document.createElement('button');
+    b.textContent = emoji;
+    b.title = emoji;
+    b.onclick = () => {
+      onPick(emoji);
+      bar.remove();
+    };
+    bar.appendChild(b);
+  }
+  const more = document.createElement('button');
+  more.className = 'more';
+  more.textContent = '+';
+  more.title = 'Другие эмодзи';
+  more.onclick = () => {
+    bar.remove();
+    openEmojiPicker(anchorEl, onPick);
+  };
+  bar.appendChild(more);
+  document.body.appendChild(bar);
+  const r = anchorEl.getBoundingClientRect();
+  const br = bar.getBoundingClientRect();
+  bar.style.left = `${Math.max(8, Math.min(r.left - br.width / 2, innerWidth - br.width - 8))}px`;
+  bar.style.top = `${Math.max(8, r.top - br.height - 8)}px`;
+  const off = (ev) => {
+    if (!bar.contains(ev.target)) {
+      bar.remove();
+      document.removeEventListener('mousedown', off, true);
+    }
+  };
+  setTimeout(() => document.addEventListener('mousedown', off, true), 0);
+}
+
+async function applyReaction(channelId, messageId, emoji) {
+  const box = S.channels[channelId];
+  const m = box?.messages.find((x) => x.id === messageId);
+  if (!m) return;
+  // оптимистично: реакция появляется сразу, сервер подтвердит или заменит
+  m.reactions ||= [];
+  const me = S.me.id;
+  const found = m.reactions.find((r) => r.emoji === emoji);
+  if (found) {
+    const i = found.users.indexOf(me);
+    if (i >= 0) found.users.splice(i, 1);
+    else found.users.push(me);
+    found.count = found.users.length;
+    if (!found.count) m.reactions = m.reactions.filter((r) => r !== found);
+  } else {
+    m.reactions.push({ emoji, users: [me], count: 1 });
+  }
+  paint('messages');
+  try {
+    const res = await apiMod.post(`/api/channels/${channelId}/messages/${messageId}/react`, { emoji });
+    if (res?.reactions) {
+      m.reactions = res.reactions;
+      paint('messages');
+    }
+  } catch (err) {
+    toast('Реакция не отправилась: ' + err.message, 'err', 2600);
+  }
+}
+
 function copyMessage(messageId) {
   const box = S.channels[S.view.id];
   const m = box?.messages.find((x) => x.id === messageId);
@@ -1449,6 +1532,15 @@ async function handleWsEvent(msg) {
       if (msg.user.id === S.me.id) S.me = { ...S.me, ...msg.user };
       paint('all');
       break;
+    case 'msg:reactions': {
+      const box = S.channels[msg.channelId];
+      const target = box?.messages.find((m) => m.id === msg.messageId);
+      if (target) {
+        target.reactions = msg.reactions;
+        if (S.view.id === msg.channelId) paint('messages');
+      }
+      break;
+    }
     case 'msg': {
       const box = (S.channels[msg.channelId] ||= { messages: [], loaded: false, hasMore: false, authors: {} });
       if (box.messages.some((m) => m.id === msg.message.id)) break;
