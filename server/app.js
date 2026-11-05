@@ -740,6 +740,9 @@ export function createApp({ dataDir = path.resolve(process.cwd(), 'data'), trust
       name: str(a.name, 120) || file.name,
       size: file.size,
       mime: file.mime,
+      // iv нужен клиенту, чтобы расшифровать файл: без него вложение
+      // скачивается, но не открывается («Файл недоступен»)
+      iv: file.iv || '',
       url: `/api/attachments/${file.id}`,
     };
   }

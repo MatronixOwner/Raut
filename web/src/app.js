@@ -1167,11 +1167,12 @@ async function uploadAndSend(file, channelId) {
       kind: 'file',
       attachment: { id: up.id, name: file.name, channelId },
     };
-    const res = await apiMod.post(`/api/channels/${channelId}/messages`, body);
-    await insertOwnMessage(res.message, channelId);
-    // локальный кэш расшифрованного файла
+    // кэш заполняем ДО вставки сообщения: иначе первый же рендер успевает
+    // сходить за файлом на сервер и показать «Файл недоступен»
     const url = URL.createObjectURL(new Blob([bytes], { type: file.type || guessMime(file.name) }));
     attachCache.set(up.id, url);
+    const res = await apiMod.post(`/api/channels/${channelId}/messages`, body);
+    await insertOwnMessage(res.message, channelId);
   } catch (err) {
     toast('Не удалось отправить файл: ' + err.message, 'err');
   } finally {

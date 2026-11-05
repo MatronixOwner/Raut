@@ -105,6 +105,23 @@ const inbox = await a.evaluate(() => [...document.querySelectorAll('.msg-body')]
 check('Алиса расшифровала сообщение Боба', inbox.includes('привет от Боба'), JSON.stringify(inbox));
 check('нерасшифрованных сообщений нет', (await a.evaluate(() => document.querySelectorAll('.msg-locked').length)) === 0);
 
+// вложение: отправляем файл перетаскиванием и проверяем, что получатель его расшифровал
+const drop = await a.evaluateHandle(async () => {
+  const dt = new DataTransfer();
+  const res = await fetch('/icon.svg');
+  dt.items.add(new File([await res.blob()], 'rautsvg.svg', { type: 'image/svg+xml' }));
+  return dt;
+});
+const composer = await a.$('.composer-inner');
+await composer.evaluate((el, dt) => el.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })), drop);
+await sleep(5000);
+check('вложение отправлено и открывается у отправителя', !!(await a.$('.attach-file, .attach-img')));
+await sleep(2500);
+await bob.evaluate(() => document.querySelector('[data-act="open-text"]')?.click());
+await sleep(5000);
+const bobFiles = await bob.evaluate(() => [...document.querySelectorAll('.attach-file, .attach-img')].map((e) => e.tagName));
+check('получатель скачал и расшифровал файл', bobFiles.length > 0, bobFiles.join(','));
+
 for (const page of [a, bob]) {
   if (MOBILE) {
     // на телефоне панель каналов выдвижная

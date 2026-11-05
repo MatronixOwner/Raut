@@ -201,6 +201,12 @@ test('вложения: приватность и привязка к канал
   }, a.token);
 
   assert.equal((await fetch(serverBase + url, { headers: { Authorization: `Bearer ${b.token}` } })).status, 200);
+
+  // клиент не сможет расшифровать файл без iv — сервер обязан его вернуть
+  const history = await api('GET', `/api/channels/${dm.json.channel.id}/messages`, null, a.token);
+  const sent = history.json.messages.find((m) => m.kind === 'file');
+  assert.ok(sent.attachment.iv, 'iv файла должен возвращаться в истории сообщений');
+  assert.equal(sent.attachment.iv, up.json.iv);
 });
 
 test('валидация входных данных', async () => {
