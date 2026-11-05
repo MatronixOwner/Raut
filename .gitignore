@@ -1,0 +1,26 @@
+node_modules/
+data/
+data-*/
+dist/
+release/
+.cache/
+build/out/
+build/payload/
+build/cache/
+build/app/
+build/win-unpacked/
+build/electron-dist/
+build/builder-config.json
+*.asar
+*.exe
+*.zip
+*.7z
+*.part
+*.log
+npm-debug.log*
+.DS_Store
+# нативные артефакты иконки храним, остальное — генерируется
+!build/icon.ico
+!build/icon.png
+!build/icon.svg
+!build/icon-256.png

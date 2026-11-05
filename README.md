@@ -1,1 +1,112 @@
 # Raut
+
+Мессенджер для своих: серверы, категории, текстовые и голосовые каналы, личные
+сообщения и звонки, демонстрация экрана. Сервер живёт на вашем компьютере,
+переписка шифруется на устройстве.
+
+Готовый установщик: **[release/RautSetup-0.2.0.exe](release/RautSetup-0.2.0.exe)**
+(Windows 10/11 x64, права администратора не нужны) — либо портативный
+`release/Raut-0.2.0-portable.zip`, если не хочется ничего ставить.
+
+---
+
+## Что внутри
+
+| Слой | Технологии | Где |
+| --- | --- | --- |
+| Сервер | Node.js 22, `node:http`, свой WebSocket, JSON-хранилище | `server/` |
+| Клиент | ванильный JS без сборки, ES-модули, CSS | `web/` |
+| Голос | WebRTC mesh, Opus 48 кГц, DTLS-SRTP | `web/src/rtc.js` |
+| Шумодав | GTCRN (нейросеть) и RNNoise в AudioWorklet + WASM | `web/vendor/noise/` |
+| Шифрование | ECDH P-256 + AES-256-GCM через WebCrypto | `web/src/crypto.js` |
+| Установщик | NSIS 3.13 + официальный `node.exe` | `scripts/build-windows.mjs` |
+
+Сборки через бандлер нет: браузер грузит `web/index.html` как есть, поэтому
+править интерфейс можно без `npm run build`.
+
+## Запуск из исходников
+
+```bash
+npm install
+npm start                 # http://localhost:8787
+npm run dev               # то же + сразу открыть окно
+node server/index.js --port 8800 --data ./data-test
+```
+
+Открыть на телефоне в той же Wi-Fi: сервер печатает адрес вида
+`http://192.168.x.x:8787` — он же доступен в приложении через «Приглашение».
+
+## Сборка установщика
+
+```bash
+npm run build:win         # release/RautSetup-0.2.0.exe + портативный zip
+```
+
+Сборщик сам скачивает NSIS и официальный `node.exe` (кэш в `build/cache/`),
+кладёт сервер и веб-клиент в payload, проверяет синтаксис каждого файла,
+переводит `node.exe` в GUI-подсистему PE (чтобы не мигало консольное окно),
+пишет `BUILDINFO.txt` с контрольными суммами и вызывает `makensis`. Работает
+на Linux, macOS и Windows без Electron и без 200 МБ `node_modules`.
+
+Ручная сборка, если NSIS уже есть:
+
+```bash
+makensis -V3 -INPUTCHARSET UTF8 -DRAUT_VERSION=0.2.0 \
+  -DRAUT_PAYLOAD=build/payload -DRAUT_OUTFILE=release/RautSetup-0.2.0.exe \
+  -DRAUT_ICON=build/icon.ico installer/raut.nsi
+```
+
+## Состав установленного приложения
+
+```
+%LOCALAPPDATA%\Raut\
+  Raut.exe            приложение (Node.js 22 для Windows, GUI-подсистема)
+  Raut-console.cmd    запуск из консоли и --stop
+  app\server\         сервер
+  app\web\            клиент
+  data\               аккаунты, сообщения, файлы, журнал server.log
+  Uninstall.exe
+```
+
+Ярлыки: рабочий стол, меню «Пуск», «Остановить Raut». Настройка «Запускать
+при входе в Windows» — отдельная галочка в установщике, по умолчанию выключена.
+
+## Проверки
+
+```bash
+npm run check    # синтаксис всех модулей
+npm test         # 12 тестов: API, права доступа, E2E-обмен ключами
+```
+
+Тесты поднимают настоящий сервер на свободном порту, регистрируют двух
+пользователей, создают сервер и каналы, заворачивают ключ канала на открытый
+ключ участника, расшифровывают сообщения и проверяют, что посторонний их не
+прочитает и не получит доступ к вложениям — то есть проверяют сквозное
+шифрование, а не моки.
+
+Голос и интерфейс проверялись в Chromium (в том числе в мобильном
+viewport 390 px): вход в канал без микрофона переводит в режим слушателя,
+плитка показывает «без микрофона», выход не подвешивает экран.
+
+## Структура
+
+```
+server/index.js    HTTP + WebSocket, статика, раздача веб-клиента
+server/app.js      аккаунты, серверы, каналы, сообщения, поиск, сигналинг
+server/ws.js       протокол реального времени (своя реализация RFC 6455)
+server/store.js    JSON-хранилище на диск
+web/src/app.js     состояние, действия, роутинг
+web/src/views.js   разметка экранов
+web/src/panels.js  модальные панели: настройки, создание сервера, поиск
+web/src/rtc.js     mesh-звонок: offer/answer, ICE, mute, экран
+web/src/audio.js   микрофон, шумодав, громкость, устройства
+web/src/crypto.js  идентичность устройства, ключи каналов, AES-GCM
+scripts/           сборщик установщика и генератор иконки
+installer/         NSIS-скрипт и README.txt, который видит пользователь
+```
+
+## Лицензия
+
+MIT — см. [LICENSE.txt](LICENSE.txt). Сторонние компоненты: Node.js (MIT),
+GTCRN (MIT), RNNoise (BSD-3), Inter (SIL OFL), @sapphi-red/web-noise-suppressor
+(MIT), Electron (MIT, только для `npm run desktop`).

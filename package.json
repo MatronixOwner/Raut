@@ -1,0 +1,31 @@
+{
+  "name": "raut",
+  "productName": "Raut",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Raut — голос, видео и серверы для своих. Открытый мессенджер с E2E-шифрованием.",
+  "author": "Raut",
+  "license": "MIT",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js --open",
+    "test": "node --test server/test/*.test.js",
+    "check": "node --check server/index.js && node --check server/app.js && node --check server/ws.js && node --check server/store.js && node --check server/util.js && node --check web/src/app.js && node --check web/src/views.js && node --check web/src/panels.js && node --check web/src/ui.js && node --check web/src/rtc.js && node --check web/src/audio.js && node --check web/src/api.js && node --check web/src/crypto.js && node --check electron/main.js",
+    "icon": "node scripts/make-icon.mjs",
+    "desktop": "electron .",
+    "build:win": "node scripts/build-windows.mjs",
+    "build:electron": "node scripts/build-windows.mjs --electron"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@electron/asar": "^4.3.1",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
+    "resedit": "^3.1.0",
+    "sharp": "^0.34.5"
+  }
+}
