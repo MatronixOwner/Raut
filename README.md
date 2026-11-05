@@ -4,9 +4,11 @@
 сообщения и звонки, демонстрация экрана. Сервер живёт на вашем компьютере,
 переписка шифруется на устройстве.
 
-Готовый установщик: **[release/RautSetup-0.2.0.exe](release/RautSetup-0.2.0.exe)**
-(Windows 10/11 x64, права администратора не нужны) — либо портативный
-`release/Raut-0.2.0-portable.zip`, если не хочется ничего ставить.
+**Скачать для Windows 10/11 x64** (права администратора не нужны):
+
+- Установщик: https://github.com/MatronixOwner/Raut/releases/latest/download/RautSetup-0.2.0.exe
+- Портативный ZIP (без установки): https://github.com/MatronixOwner/Raut/releases/latest/download/Raut-0.2.0-portable.zip
+- Все файлы и контрольные суммы: https://github.com/MatronixOwner/Raut/releases/latest
 
 ---
 
@@ -49,6 +51,10 @@ node server/index.js --port 8800 --data ./data-test
 ```bash
 npm run build:win         # release/RautSetup-0.2.0.exe + портативный zip
 ```
+
+Релиз собирается и на GitHub: пуш тега `v*` (или ручной запуск workflow
+`Release`) прогоняет проверки, собирает установщик на ubuntu-раннере и
+публикует файлы в Releases — оттуда и берётся ссылка на скачивание.
 
 Сборщик сам скачивает NSIS и официальный `node.exe` (кэш в `build/cache/`),
 кладёт сервер и веб-клиент в payload, проверяет синтаксис каждого файла,
