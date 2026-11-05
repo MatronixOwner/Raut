@@ -1764,10 +1764,11 @@ async function joinVoice(channelId, { serverId = null, dm = false } = {}) {
     app.realtime?.send({ t: 'rtc:join', channelId });
     paint('all');
     if (micError) {
-      const reason = /NotFoundError|Requested device not found/i.test(micError.message + ' ' + (micError.name || ''))
-        ? 'Микрофон не найден — вы подключились в режиме слушателя. Выберите устройство в настройках звука.'
-        : 'Нет доступа к микрофону — вы в режиме слушателя. Проверьте разрешения в системе.';
-      toast(reason, 'err', 7000);
+      const notFound = /NotFoundError|Requested device not found/i.test(micError.message + ' ' + (micError.name || ''));
+      const reason = notFound
+        ? 'Микрофон не найден — вы подключились в режиме слушателя. Подключите микрофон и нажмите кнопку ещё раз.'
+        : 'Нет доступа к микрофону — вы в режиме слушателя. Разрешите микрофон в параметрах системы.';
+      toast(reason, 'warn', 5500);
     }
     if (dm) {
       app.realtime?.send({ t: 'rtc:joined-dm', channelId });
@@ -1829,7 +1830,7 @@ app.toggleMute = async function toggleMute() {
       paint('all');
       toast('Микрофон подключён', 'ok');
     } catch {
-      toast('Микрофон не найден. Проверьте устройство в настройках звука.', 'err', 5000);
+      toast('Микрофон не найден. Подключите его и нажмите кнопку ещё раз.', 'warn', 5000);
     }
     return;
   }

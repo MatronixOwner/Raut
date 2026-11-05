@@ -44,7 +44,8 @@
   --radius-sm: 8px;
   --radius-lg: 18px;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
-  --font: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font: 'Inter Variable', 'Inter', 'Segoe UI', 'Segoe UI Emoji', 'Apple Color Emoji',
+    'Noto Color Emoji', 'Noto Emoji', system-ui, -apple-system, sans-serif;
   --mono: 'JetBrains Mono', 'Cascadia Code', ui-monospace, monospace;
   --rail: 76px;
   --side: 250px;
@@ -681,6 +682,13 @@ a { color: var(--accent); text-decoration: none; }
   align-content: center; justify-content: center;
   grid-template-columns: repeat(auto-fit, minmax(240px, 340px));
 }
+.call-stage.single { grid-template-columns: minmax(0, 520px); }
+.call-stage.single .video-tile { aspect-ratio: 16 / 9; }
+.video-tile.hint, .call-stage.single .video-tile.hint {
+  aspect-ratio: auto; min-height: 0; background: rgba(255,255,255,0.02);
+  border-style: dashed; padding: 16px 18px;
+}
+.video-tile.hint .vt-head { position: static; top: auto; padding: 0; max-width: 420px; }
 .video-tile {
   position: relative; background: #0b0810; border-radius: 14px; overflow: hidden;
   aspect-ratio: 16 / 10; border: 1px solid var(--line-strong); display: grid; place-items: center;
@@ -700,6 +708,12 @@ a { color: var(--accent); text-decoration: none; }
 }
 .video-tile .vt-head b { display: block; color: var(--fg); font-size: 15px; margin-bottom: 2px; }
 .video-tile.empty .vt-avatar .avatar { width: 84px; height: 84px; font-size: 30px; }
+.video-tile .vt-head {
+  position: absolute; top: 10px; left: 10px; right: 10px;
+  color: var(--fg-dim); font-size: 12.5px; text-align: center; line-height: 1.35;
+  pointer-events: none;
+}
+.video-tile .vt-head b { display: block; color: var(--fg); font-size: 15px; margin-bottom: 2px; }
 .video-tile.speaking { border-color: var(--accent-3); box-shadow: 0 0 0 1px var(--accent-3), 0 0 24px rgba(89,227,200,0.2); }
 .video-tile.self-tile { border-style: dashed; }
 
@@ -772,7 +786,7 @@ select {
 
 .toasts {
   position: fixed;
-  bottom: 22px;
+  bottom: 86px; /* над полем ввода и панелью звонка */
   left: calc(50% + (var(--rail) + (var(--side) - var(--rail))) / 2);
   transform: translateX(-50%);
   z-index: 200;
@@ -796,6 +810,7 @@ select {
 }
 .toast.err { border-color: rgba(255,93,108,0.5); color: #ffc3c9; }
 .toast.ok { border-color: rgba(74,222,128,0.4); color: #b9f6cf; }
+.toast.warn { border-color: rgba(255,180,84,0.45); color: #ffd9a8; }
 
 .spinner {
   width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.2);

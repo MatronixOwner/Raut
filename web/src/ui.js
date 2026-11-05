@@ -9,7 +9,8 @@ export function toast(message, kind = 'info', ms = 3400) {
   if (!host) return;
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
-  el.innerHTML = `${icon(kind === 'err' ? 'alert' : kind === 'ok' ? 'check' : 'info', 'sm')}<span></span>`;
+  const glyph = kind === 'err' ? 'alert' : kind === 'ok' ? 'check' : kind === 'warn' ? 'alert' : 'info';
+  el.innerHTML = `${icon(glyph, 'sm')}<span></span>`;
   el.querySelector('span').textContent = message;
   host.appendChild(el);
   setTimeout(() => {

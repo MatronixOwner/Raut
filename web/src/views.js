@@ -624,18 +624,18 @@ export function voiceView(state) {
         <button class="icon-btn" data-act="toggle-members" title="Участники">${icon('users')}</button>
       </div>
     </div>
-    <div class="call-stage">
+    <div class="call-stage${v.joined && participants.length ? '' : ' single'}">
       ${tiles.join('')}
       ${!v.joined ? `
-        <div class="video-tile empty" style="aspect-ratio:16/10;min-height:220px;width:100%;max-width:520px">
-          <div class="vt-head" style="bottom:auto"><b>${escapeHtml(channel?.name || 'Голосовой канал')}</b>
+        <div class="video-tile empty" style="min-height:220px;width:100%">
+          <div class="vt-head"><b>${escapeHtml(channel?.name || 'Голосовой канал')}</b>
             ${v.joining ? 'Включаем микрофон…' : 'Микрофон включается только после вашего согласия'}</div>
-          <div style="text-align:center;padding:48px 16px 20px">
-            <div style="font-size:36px;margin-bottom:12px">${v.joining ? icon('activity', 'lg') : icon('phone', 'lg')}</div>
+          <div style="text-align:center;padding:52px 16px 24px">
+            <div style="margin-bottom:14px">${v.joining ? icon('activity', 'lg') : icon('phone', 'lg')}</div>
             <button class="btn" data-act="join-voice" ${v.joining ? 'disabled' : ''}>${icon('phone', 'sm')} ${v.joining ? 'Подключаемся' : 'Подключиться'}</button>
           </div>
         </div>` : ''}
-      ${v.joined && !participants.length ? `<div class="video-tile empty"><div class="vt-head"><b>Пока никого</b>Позовите своих — позвоните в личку или скиньте приглашение</div></div>` : ''}
+      ${v.joined && !participants.length ? `<div class="video-tile empty hint"><div class="vt-head"><b>Пока никого — вы в канале один</b>Позовите своих: позвоните в личку или скиньте приглашение из панели канала</div></div>` : ''}
     </div>
     ${v.joined ? callBar(state) : ''}
   </main>`;
