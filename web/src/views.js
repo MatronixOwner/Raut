@@ -322,6 +322,10 @@ function serverSidebar(state, server) {
             <button class="icon-btn" data-act="copy-invite" data-code="${escapeAttr(server.inviteCode || '')}" title="Скопировать код">
               ${icon('copy', 'sm')}</button>
           </div>
+          ${(state.lanUrls || [])[0] ? `<div class="small muted" style="margin-top:6px;line-height:1.4">
+            Друг открывает Raut у себя и вставляет код.<br>
+            Ваш адрес в сети: <b>${escapeHtml((state.lanUrls[0] || '').replace(/^https?:\/\//, ''))}</b>
+          </div>` : ''}
           <button class="btn ghost sm block" style="margin-top:6px" data-act="share-invite">
             ${icon('link', 'sm')} Поделиться
           </button>

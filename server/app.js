@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WsServer } from './ws.js';
@@ -35,7 +36,12 @@ const SAFE_NAME = /^[^<>:"/\\|?*\u0000-\u001f]{1,120}$/;
 
 /* ------------------------------------------------------------------ app */
 
-export function createApp({ dataDir = path.resolve(process.cwd(), 'data'), trustProxy = true, rateLimitScale = 1 } = {}) {
+export function createApp({
+  dataDir = path.resolve(process.cwd(), 'data'),
+  trustProxy = true,
+  rateLimitScale = 1,
+  port = Number(process.env.PORT || 8787),
+} = {}) {
   const store = new Store(path.join(dataDir, 'raut.json'));
   const db = store.load();
 
@@ -784,6 +790,19 @@ export function createApp({ dataDir = path.resolve(process.cwd(), 'data'), trust
     return user;
   }
 
+  /** IPv4-адреса машины в локальной сети: по ним друзья подключаются к вам. */
+  function lanUrls(req) {
+    const host = req.headers['x-forwarded-host'] || req.headers.host || `localhost:${port}`;
+    const hostPort = (host.match(/:(\d+)$/) || [])[1] || String(port);
+    const urls = [];
+    for (const net of Object.values(os.networkInterfaces())) {
+      for (const n of net || []) {
+        if (n && n.family === 'IPv4' && !n.internal) urls.push(`http://${n.address}:${hostPort}`);
+      }
+    }
+    return urls;
+  }
+
   function wsUrlFor(req) {
     const proto = (req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
     const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
@@ -820,6 +839,9 @@ export function createApp({ dataDir = path.resolve(process.cwd(), 'data'), trust
         registrationOpen: open || db.meta.registrationOpen !== false,
         firstRun: open,
         ws: wsUrlFor(req),
+        // адреса для друзей: копируются в приглашение вместе с кодом
+        lan: lanUrls(req),
+        port,
         limits: { attachment: MAX_ATTACHMENT, message: MAX_MESSAGE_BYTES },
         you: user ? publicUser(user) : null,
       });

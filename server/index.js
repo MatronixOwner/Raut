@@ -177,7 +177,7 @@ try {
 
 if (silent || process.platform === 'win32') teeToFile();
 
-const app = createApp({ dataDir, rateLimitScale: Number(process.env.RAUT_RATE_SCALE || 1) || 1 });
+const app = createApp({ dataDir, rateLimitScale: Number(process.env.RAUT_RATE_SCALE || 1) || 1, port });
 const server = http.createServer();
 app.attach(server);
 

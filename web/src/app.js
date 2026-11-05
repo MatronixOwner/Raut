@@ -185,6 +185,8 @@ function registerIdentityKey() {
 }
 
 async function boot() {
+  // смена сервера/выход — старые модалки поверх нового экрана не нужны
+  document.querySelectorAll('.modal-layer').forEach((el) => el.remove());
   loadLocal();
   S.serverLabel = apiMod.getServerUrl().replace(/^https?:\/\//, '');
   S.desktop = window.rautDesktop || null;
@@ -206,6 +208,7 @@ async function boot() {
     S.version = cfg.version || VERSION;
     S.registrationOpen = cfg.registrationOpen !== false;
     S.serverLabel = apiMod.getServerUrl().replace(/^https?:\/\//, '');
+    S.lanUrls = Array.isArray(cfg.lan) ? cfg.lan : [];
   } catch (err) {
     // сервер недоступен — покажем экран с выбором адреса
     renderAuth('login', 'Сервер недоступен: ' + err.message);
@@ -635,8 +638,13 @@ function bindGlobal() {
       case 'create-channel':
         createChannelDialog(target.dataset.kind || 'text');
         break;
-      case 'copy-invite':
-        navigator.clipboard.writeText(target.dataset.code || '').catch(() => {});
+      case 'copy-invite': {
+        const srv = S.servers.find((s) => s.id === S.view.serverId);
+        const payload = srv ? inviteText(srv) : target.dataset.code || '';
+        navigator.clipboard.writeText(payload).catch(() => {});
+        toast('Приглашение скопировано вместе с адресом', 'ok', 1900);
+        break;
+      }
         toast('Код приглашения скопирован', 'ok', 1600);
         break;
       case 'share-invite':
@@ -889,7 +897,28 @@ app.updateServer = async function updateServer(serverId, patch) {
   paint('all');
 };
 
-app.joinInvite = async function joinInvite(code) {
+/** Разбирает приглашение: «rk8jfko», «http://192.168.1.5:8787 rk8jfko», «raut://invite/rk8jfko». */
+function parseInvite(raw) {
+  const text = String(raw || '').trim();
+  const match = text.match(/([a-z0-9]{5,16})\s*$/i);
+  const code = match ? match[1] : '';
+  // адрес сервера: явный http(s):// или host:port в начале строки
+  const url = (text.match(/https?:\/\/[^\s]+/i) || text.match(/\b\d{1,3}(?:\.\d{1,3}){3}:\d+/) || [])[0];
+  return { code, url: url ? (url.startsWith('http') ? url : 'http://' + url) : null };
+}
+
+app.joinInvite = async function joinInvite(raw) {
+  const { code, url } = parseInvite(raw);
+  if (!code) throw new Error('В приглашении нет кода');
+  // если друг пришёл по приглашению с адресом — сначала переключаемся на этот сервер
+  if (url && apiMod.httpBase() !== url.replace(/\/+$/, '')) {
+    // чужой сервер: переключаемся и просим войти там
+    apiMod.setServerUrl(url);
+    app.setToken(null);
+    app.realtime?.close?.();
+    await boot();
+    throw new Error(`Это сервер ${url.replace(/^https?:\/\//, '')}. Войдите на нём и вставьте приглашение снова.`);
+  }
   const res = await apiMod.post('/api/servers/join', { code });
   const exists = S.servers.find((s) => s.id === res.server.id);
   if (exists) Object.assign(exists, res.server);
@@ -953,10 +982,17 @@ async function createChannelDialog(kind) {
   }
 }
 
+function inviteText(server) {
+  const address = (S.lanUrls || [])[0] || null;
+  const lines = [`Входи в Raut — мой сервер «${server.name}».`, `Код приглашения: ${server.inviteCode}`];
+  if (address) lines.push(`Адрес сервера: ${address}`);
+  return lines.join('\n');
+}
+
 async function shareInvite() {
   const server = S.servers.find((s) => s.id === S.view.serverId);
   if (!server) return;
-  const text = `Входи в Raut — мой сервер «${server.name}». Код приглашения: ${server.inviteCode}`;
+  const text = inviteText(server);
   if (navigator.share) {
     try {
       await navigator.share({ title: 'Raut', text });
