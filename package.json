@@ -16,7 +16,8 @@
     "icon": "node scripts/make-icon.mjs",
     "desktop": "electron .",
     "build:win": "node scripts/build-windows.mjs",
-    "build:electron": "node scripts/build-windows.mjs --electron"
+    "build:electron": "node scripts/build-windows.mjs --electron",
+    "qa": "node scripts/qa/smoke.mjs"
   },
   "engines": {
     "node": ">=20"
@@ -26,6 +27,8 @@
     "electron": "^45.2.3",
     "electron-builder": "^26.18.0",
     "resedit": "^3.1.0",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "puppeteer-core": "^25.16.0",
+    "@sparticuz/chromium": "^141.0.0"
   }
 }
