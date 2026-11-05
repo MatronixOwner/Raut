@@ -1,0 +1,85 @@
+name: Release
+
+# Собирает Windows-установщик и портативный ZIP на раннере GitHub и
+# публикует их в Releases. Нужно потому, что прямая ссылка на скачивание
+# должна жить в интернете, а не в рабочей песочнице.
+#
+# Запуск: вручную (workflow_dispatch) или тегом v*.
+# Тег можно поставить из любого места: git tag v0.2.0 && git push origin v0.2.0
+# (или через веб-интерфейс GitHub: Releases → Draft a new release).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Версия без префикса, например 0.2.0'
+        required: false
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Установить зависимости
+        run: npm ci --no-audit --no-fund
+
+      - name: Проверка синтаксиса
+        run: npm run check
+
+      - name: Тесты
+        run: npm test
+
+      - name: Собрать установщик и портативную версию
+        run: node scripts/build-windows.mjs
+
+      - name: Контрольные суммы
+        run: |
+          cd release
+          sha256sum *.exe *.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Артефакты сборки
+        uses: actions/upload-artifact@v4
+        with:
+          name: raut-windows
+          path: |
+            release/RautSetup-*.exe
+            release/Raut-*-portable.zip
+            release/*.sha256
+            release/SHA256SUMS.txt
+          retention-days: 30
+
+      - name: Опубликовать релиз
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', inputs.version || '0.2.0') }}
+          name: Raut ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', inputs.version || '0.2.0') }}
+          body: |
+            Windows-установщик Raut (x64, права администратора не нужны)
+            и портативная версия.
+
+            - серверы, категории, текстовые и голосовые каналы, личные сообщения и звонки;
+            - голос: WebRTC mesh, Opus 48 кГц, шумодав GTCRN;
+            - сквозное шифрование ECDH P-256 + AES-256-GCM;
+            - в приглашении есть и код, и адрес сервера в локальной сети.
+
+            Контрольные суммы — в `SHA256SUMS.txt` и в файлах `*.sha256`.
+          files: |
+            release/RautSetup-*.exe
+            release/Raut-*-portable.zip
+            release/*.sha256
+            release/SHA256SUMS.txt
+          fail_on_unmatched_files: true
